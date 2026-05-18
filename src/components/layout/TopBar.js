@@ -31,21 +31,30 @@ function NotificationIcon() {
   );
 }
 
-export default function TopBar() {
+export default function TopBar({ showLogo = true }) {
   return (
-    <View style={styles.container}>
-      <MenuIcon />
-      <Image
-        source={require('../../assets/brand/midnight-lace-logo.png')}
-        style={styles.logo}
-        resizeMode="contain"
-      />
-      <NotificationIcon />
+    <View style={styles.wrapper}>
+      <View style={styles.container}>
+        <MenuIcon />
+        {showLogo ? (
+          <Image
+            source={require('../../assets/brand/midnight-lace-logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+        ) : null}
+        <NotificationIcon />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrapper: {
+    height: 120,
+    width: '100%',
+    zIndex: 10,
+  },
   container: {
     alignItems: 'center',
     backgroundColor: colors.burgundy,

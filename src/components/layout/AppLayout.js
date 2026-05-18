@@ -13,7 +13,7 @@ const TOP_BAR_HEIGHT = 120;
 const FOOTER_VISIBLE_OFFSET_RATIO = 255 / 720;
 const FOOTER_GAP = 38;
 
-export default function AppLayout({ children }) {
+export default function AppLayout({ children, showLogo = true }) {
   const { height, width } = useWindowDimensions();
   const patternSize = width * (902 / 402);
   const contentHeight = Math.max(height - TOP_BAR_HEIGHT, 0);
@@ -24,7 +24,7 @@ export default function AppLayout({ children }) {
   return (
     <View style={styles.outer}>
       <View style={styles.screen}>
-        <TopBar />
+        <TopBar showLogo={showLogo} />
         <ScrollView
           bounces={false}
           contentContainerStyle={[
@@ -49,7 +49,15 @@ export default function AppLayout({ children }) {
             resizeMode="stretch"
             pointerEvents="none"
           />
-          {children}
+          <View style={styles.topContent}>
+            <Image
+              source={require('../../assets/decor/puntilla.png')}
+              style={styles.lace}
+              resizeMode="stretch"
+              pointerEvents="none"
+            />
+            {children}
+          </View>
           <Image
             source={require('../../assets/decor/arabesque-background.png')}
             style={[
@@ -84,6 +92,13 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'space-between',
     overflow: 'hidden',
+  },
+  topContent: {
+    zIndex: 2,
+  },
+  lace: {
+    height: 30,
+    width: '100%',
   },
   backgroundPattern: {
     opacity: 0.5,
