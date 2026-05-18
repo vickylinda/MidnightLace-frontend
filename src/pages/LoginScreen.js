@@ -40,7 +40,7 @@ function validatePassword(value) {
   return '';
 }
 
-export default function LoginScreen() {
+export default function LoginScreen({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -68,6 +68,10 @@ export default function LoginScreen() {
       email: true,
       password: true,
     });
+
+    if (!emailError && !passwordError) {
+      onLoginSuccess?.();
+    }
   }
 
   return (
