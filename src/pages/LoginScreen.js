@@ -6,41 +6,9 @@ import PrimaryButton from '../components/forms/PrimaryButton';
 import RememberCheckbox from '../components/forms/RememberCheckbox';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { validateEmail, validatePassword } from '../utils/authValidation';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-function validateEmail(value) {
-  const email = value.trim();
-
-  if (!email) {
-    return 'Ingresá tu email.';
-  }
-
-  if (!EMAIL_PATTERN.test(email)) {
-    return 'Ingresá un email válido, con @ y dominio.';
-  }
-
-  return '';
-}
-
-function validatePassword(value) {
-  if (!value) {
-    return 'Ingresá tu contraseña.';
-  }
-
-  const hasMinLength = value.length >= 8;
-  const hasUppercase = /[A-Z]/.test(value);
-  const hasLowercase = /[a-z]/.test(value);
-  const hasNumber = /\d/.test(value);
-
-  if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber) {
-    return 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.';
-  }
-
-  return '';
-}
-
-export default function LoginScreen({ onLoginSuccess }) {
+export default function LoginScreen({ onLoginSuccess, onRegisterPress }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -52,6 +20,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
   const emailError = validateEmail(email);
   const passwordError = validatePassword(password);
+  const isFormValid = !emailError && !passwordError;
   const visibleEmailError = touched.email || submitted ? emailError : '';
   const visiblePasswordError = touched.password || submitted ? passwordError : '';
 
@@ -110,11 +79,13 @@ export default function LoginScreen({ onLoginSuccess }) {
           </Pressable>
         </View>
 
-        <PrimaryButton onPress={handleSubmit}>Enviar</PrimaryButton>
+        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
+          Enviar
+        </PrimaryButton>
 
         <View style={styles.registerRow}>
           <Text style={styles.registerText}>¿No tenes una cuenta? </Text>
-          <Pressable>
+          <Pressable onPress={onRegisterPress}>
             <Text style={styles.link}>Registrate</Text>
           </Pressable>
         </View>

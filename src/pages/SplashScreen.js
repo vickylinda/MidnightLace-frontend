@@ -16,6 +16,7 @@ export default function SplashScreen() {
       <View style={styles.content}>
         <Image
           source={require('../assets/brand/midnight-lace-logo.png')}
+          tintColor="#9F021D"
           style={[
             styles.logo,
             {
@@ -39,7 +40,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     transform: [{ translateY: -6 }],
   },
-  logo: {
-    tintColor: '#9F021D',
-  },
+  logo: {},
 });
