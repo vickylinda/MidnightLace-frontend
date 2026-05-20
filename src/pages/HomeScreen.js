@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
   },
   allAuctionsButton: {
     alignItems: 'center',
-    backgroundColor: colors.cocoa,
+    backgroundColor: colors.burgundy,
     borderRadius: 16,
     justifyContent: 'center',
     marginTop: 24,

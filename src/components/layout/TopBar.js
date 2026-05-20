@@ -1,7 +1,13 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../../theme/colors';
+
+const TOP_BAR_HEIGHT = 86;
+const LOGO_RATIO = 965 / 258;
+const HORIZONTAL_PADDING = 20;
+const SIDE_SLOT_WIDTH = 50;
 
 function MenuIcon() {
   return (
@@ -32,18 +38,52 @@ function NotificationIcon() {
 }
 
 export default function TopBar({ showLogo = true }) {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const availableLogoWidth =
+    width - HORIZONTAL_PADDING * 2 - SIDE_SLOT_WIDTH * 2;
+  const logoWidth = Math.min(
+    Math.max(width * 0.62, 215),
+    availableLogoWidth,
+    320
+  );
+  const logoHeight = logoWidth / LOGO_RATIO;
+
   return (
-    <View style={styles.wrapper}>
-      <View style={styles.container}>
-        <MenuIcon />
-        {showLogo ? (
-          <Image
-            source={require('../../assets/brand/midnight-lace-logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        ) : null}
-        <NotificationIcon />
+    <View style={[styles.wrapper, { height: TOP_BAR_HEIGHT + insets.top }]}>
+      <View
+        style={[
+          styles.container,
+          {
+            height: TOP_BAR_HEIGHT + insets.top,
+            paddingTop: insets.top,
+          },
+        ]}
+      >
+        <View style={styles.sideSlot}>
+          <MenuIcon />
+        </View>
+
+        <View style={styles.logoSlot}>
+          {showLogo ? (
+            <Image
+              source={require('../../assets/brand/midnight-lace-logo.png')}
+              tintColor={colors.cream}
+              style={[
+                styles.logo,
+                {
+                  height: logoHeight,
+                  width: logoWidth,
+                },
+              ]}
+              resizeMode="contain"
+            />
+          ) : null}
+        </View>
+
+        <View style={styles.sideSlot}>
+          <NotificationIcon />
+        </View>
       </View>
     </View>
   );
@@ -51,7 +91,6 @@ export default function TopBar({ showLogo = true }) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    height: 120,
     width: '100%',
     zIndex: 10,
   },
@@ -59,16 +98,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.burgundy,
     flexDirection: 'row',
-    height: 120,
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 34,
+    paddingHorizontal: HORIZONTAL_PADDING,
     width: '100%',
   },
+  sideSlot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: SIDE_SLOT_WIDTH,
+  },
+  logoSlot: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
   logo: {
-    height: 68,
-    tintColor: colors.cream,
-    transform: [{ translateX: -2 }],
-    width: 240,
   },
 });

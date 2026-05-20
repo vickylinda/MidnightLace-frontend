@@ -52,9 +52,12 @@ export default function AuthTextField({
   error,
   keyboardType = 'default',
   label,
+  maxLength,
   onBlur,
   onChangeText,
+  onFocus,
   secureTextEntry = false,
+  style,
   textContentType,
   value,
 }) {
@@ -63,7 +66,7 @@ export default function AuthTextField({
   const hasError = Boolean(error);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <Text style={styles.label}>{label}</Text>
       <View style={[styles.inputRow, hasError ? styles.inputRowError : null]}>
         <TextInput
@@ -71,8 +74,10 @@ export default function AuthTextField({
           autoComplete={autoComplete}
           autoCorrect={false}
           keyboardType={keyboardType}
+          maxLength={maxLength}
           onBlur={onBlur}
           onChangeText={onChangeText}
+          onFocus={onFocus}
           secureTextEntry={isPasswordField && !isPasswordVisible}
           style={[styles.input, isPasswordField ? styles.passwordInput : null]}
           textContentType={textContentType}

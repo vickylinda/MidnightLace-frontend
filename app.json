@@ -26,7 +26,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Midnight Lace necesita acceder a tus fotos para cargar la imagen del DNI.",
+          "cameraPermission": "Midnight Lace necesita acceder a la cámara para tomar una foto del DNI."
+        }
+      ]
     ]
   }
 }
