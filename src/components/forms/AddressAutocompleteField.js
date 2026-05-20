@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -230,6 +230,7 @@ export default function AddressAutocompleteField({ displayValue = '', onSelect }
   const [isLoading, setIsLoading] = useState(false);
   const [hasSelectedPlace, setHasSelectedPlace] = useState(false);
   const [selectedQuery, setSelectedQuery] = useState('');
+  const lastDisplayValueRef = useRef('');
   const [error, setError] = useState(
     geoapifyApiKey ? '' : 'Falta configurar EXPO_PUBLIC_GEOAPIFY_API_KEY.'
   );
@@ -237,14 +238,19 @@ export default function AddressAutocompleteField({ displayValue = '', onSelect }
   const shouldSearch = query.trim().length >= SEARCH_MIN_LENGTH;
 
   useEffect(() => {
-    if (displayValue && displayValue !== query && displayValue !== selectedQuery) {
-      setQuery(displayValue);
-      setSelectedQuery(displayValue);
-      setPlaces([]);
-      setError('');
-      setHasSelectedPlace(true);
+    const nextDisplayValue = displayValue || '';
+
+    if (nextDisplayValue === lastDisplayValueRef.current) {
+      return;
     }
-  }, [displayValue, query, selectedQuery]);
+
+    lastDisplayValueRef.current = nextDisplayValue;
+    setQuery(nextDisplayValue);
+    setSelectedQuery(nextDisplayValue);
+    setPlaces([]);
+    setError('');
+    setHasSelectedPlace(Boolean(nextDisplayValue));
+  }, [displayValue]);
 
   useEffect(() => {
     let isActive = true;
@@ -325,6 +331,7 @@ export default function AddressAutocompleteField({ displayValue = '', onSelect }
   function handleSelect(place) {
     const address = parseAddress(place);
 
+    lastDisplayValueRef.current = address.addressLine;
     setQuery(address.addressLine);
     setSelectedQuery(address.addressLine);
     setPlaces([]);
