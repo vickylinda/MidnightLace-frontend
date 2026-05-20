@@ -6,6 +6,7 @@ import AppLayout from '../components/layout/AppLayout';
 import HomeScreen from '../pages/HomeScreen';
 import LoginScreen from '../pages/LoginScreen';
 import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
+import ProfileScreen from '../pages/ProfileScreen';
 import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
 import SignUpFinalScreen from '../pages/SignUpFinalScreen';
 import SignUpScreen from '../pages/SignUpScreen';
@@ -14,6 +15,7 @@ import SplashScreen from '../pages/SplashScreen';
 const ROUTES = {
   home: 'home',
   login: 'login',
+  profile: 'profile',
   signUp: 'signUp',
   signUpAuthorizing: 'signUpAuthorizing',
   signUpFinal: 'signUpFinal',
@@ -24,6 +26,7 @@ const ROUTES = {
 const ROUTE_PATHS = {
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
+  [ROUTES.profile]: '/profile',
   [ROUTES.signUp]: '/sign-up',
   [ROUTES.signUpAuthorizing]: '/sign-up-authorizing',
   [ROUTES.signUpFinal]: '/sign-up-final',
@@ -128,6 +131,10 @@ export default function AppNavigator() {
     if (itemId === 'inicio') {
       navigateTo(ROUTES.home);
     }
+
+    if (itemId === 'perfil') {
+      navigateTo(ROUTES.profile);
+    }
   }
 
   if (isLoading || !fontsLoaded || currentRoute === ROUTES.splash) {
@@ -145,13 +152,17 @@ export default function AppNavigator() {
 
   return (
     <AppLayout
-      activeNavItem={currentRoute === ROUTES.home ? 'inicio' : ''}
+      activeNavItem={
+        currentRoute === ROUTES.home ? 'inicio' : currentRoute === ROUTES.profile ? 'perfil' : ''
+      }
       onNavItemPress={handleNavItemPress}
       showLogo={currentRoute !== ROUTES.home}
       variant={layoutVariant}
     >
       {currentRoute === ROUTES.home ? (
         <HomeScreen />
+      ) : currentRoute === ROUTES.profile ? (
+        <ProfileScreen onLogout={() => navigateTo(ROUTES.login)} />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
         <SignUpAuthorizingScreen
           onAuthorized={() => navigateTo(ROUTES.signUpFinal)}

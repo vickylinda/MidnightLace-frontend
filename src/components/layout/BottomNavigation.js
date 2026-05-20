@@ -12,8 +12,9 @@ const navItems = [
   { id: 'actividad', icon: ActivityIcon, label: 'Actividad' },
   { id: 'perfil', icon: ProfileIcon, label: 'Perfil' },
 ];
-const BOTTOM_NAV_HEIGHT = 86;
-const BOTTOM_NAV_PADDING = 8;
+const BOTTOM_NAV_CONTENT_HEIGHT = 64;
+const BOTTOM_NAV_MIN_BOTTOM_PADDING = 5;
+const BOTTOM_NAV_TOP_PADDING = 4;
 
 function HomeIcon({ color }) {
   return (
@@ -84,14 +85,16 @@ export default function BottomNavigation({
   onItemPress,
 }) {
   const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, BOTTOM_NAV_MIN_BOTTOM_PADDING);
 
   return (
     <View
       style={[
         styles.wrapper,
         {
-          height: BOTTOM_NAV_HEIGHT + insets.bottom,
-          paddingBottom: BOTTOM_NAV_PADDING + insets.bottom,
+          height: BOTTOM_NAV_CONTENT_HEIGHT + bottomPadding,
+          paddingBottom: bottomPadding,
+          paddingTop: BOTTOM_NAV_TOP_PADDING,
         },
       ]}
     >
@@ -147,15 +150,16 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 54,
+    minHeight: 44,
     paddingHorizontal: 4,
   },
   activeItem: {
     backgroundColor: colors.cream,
-    columnGap: 6,
+    columnGap: 5,
     flexDirection: 'row',
-    flexGrow: 1.35,
-    paddingHorizontal: 10,
+    flexGrow: 1.12,
+    minHeight: 38,
+    paddingHorizontal: 7,
   },
   label: {
     color: colors.cream,

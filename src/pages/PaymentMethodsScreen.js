@@ -658,7 +658,11 @@ function validateCvv(value, cardNumber) {
     : `Ingresa un CVV de ${cvvLimit} digitos.`;
 }
 
-export default function PaymentMethodsScreen({ onContinue }) {
+export default function PaymentMethodsScreen({
+  allowSkip = true,
+  onContinue,
+  showHeader = true,
+}) {
   const [bankData, setBankData] = useState(INITIAL_BANK);
   const [cardData, setCardData] = useState(INITIAL_CARD);
   const [checkData, setCheckData] = useState(INITIAL_CHECK);
@@ -786,18 +790,22 @@ export default function PaymentMethodsScreen({ onContinue }) {
     }));
 
     if (canSave) {
-      onContinue?.();
+      onContinue?.(method);
     }
   }
 
   return (
-    <View style={styles.screen}>
-      <Text style={styles.title}>
-        Medio de pago <Text style={styles.optionalTitle}>(opcional)</Text>
-      </Text>
-      <Text style={styles.subtitle}>
-        Podes agregarlo ahora o mas tarde desde tu perfil.
-      </Text>
+    <View style={[styles.screen, !showHeader ? styles.embeddedScreen : null]}>
+      {showHeader ? (
+        <>
+          <Text style={styles.title}>
+            Medio de pago <Text style={styles.optionalTitle}>(opcional)</Text>
+          </Text>
+          <Text style={styles.subtitle}>
+            Podes agregarlo ahora o mas tarde desde tu perfil.
+          </Text>
+        </>
+      ) : null}
 
       <SelectField
         onChange={(nextMethod) => {
@@ -1000,17 +1008,22 @@ export default function PaymentMethodsScreen({ onContinue }) {
         </View>
       ) : null}
 
-      <View style={styles.submit}>
-        <PrimaryButton disabled={!canSave} onPress={method ? handleSave : onContinue}>
-          {method ? 'Guardar' : 'Omitir'}
-        </PrimaryButton>
+      {method || allowSkip ? (
+        <View style={styles.submit}>
+          <PrimaryButton
+            disabled={method ? !canSave : false}
+            onPress={method ? handleSave : () => onContinue?.('')}
+          >
+            {method ? 'Guardar' : 'Omitir'}
+          </PrimaryButton>
 
-        {method ? (
-          <Pressable onPress={onContinue} style={styles.skipButton}>
-            <Text style={styles.skipText}>Omitir por ahora</Text>
-          </Pressable>
-        ) : null}
-      </View>
+          {allowSkip && method ? (
+            <Pressable onPress={() => onContinue?.('')} style={styles.skipButton}>
+              <Text style={styles.skipText}>Omitir por ahora</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1020,6 +1033,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 53,
     paddingTop: 38,
     zIndex: 2,
+  },
+  embeddedScreen: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
   title: {
     color: colors.textBurgundy,

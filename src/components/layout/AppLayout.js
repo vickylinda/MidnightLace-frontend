@@ -13,7 +13,8 @@ import TopBar from './TopBar';
 
 const TOP_BAR_HEIGHT = 86;
 const LACE_HEIGHT = 30;
-const BOTTOM_NAV_HEIGHT = 86;
+const BOTTOM_NAV_CONTENT_HEIGHT = 64;
+const BOTTOM_NAV_MIN_BOTTOM_PADDING = 5;
 
 export default function AppLayout({
   activeNavItem = 'inicio',
@@ -25,7 +26,9 @@ export default function AppLayout({
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const topBarHeight = TOP_BAR_HEIGHT + insets.top;
-  const bottomNavHeight = BOTTOM_NAV_HEIGHT + insets.bottom;
+  const bottomNavHeight =
+    BOTTOM_NAV_CONTENT_HEIGHT +
+    Math.max(insets.bottom, BOTTOM_NAV_MIN_BOTTOM_PADDING);
 
   const bottomInset = variant === 'app' ? bottomNavHeight : 0;
 

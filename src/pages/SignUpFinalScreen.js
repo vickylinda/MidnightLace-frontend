@@ -1,82 +1,14 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
 
 import AuthTextField from '../components/forms/AuthTextField';
+import PasswordChecklist, {
+  passwordRules,
+} from '../components/forms/PasswordChecklist';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import SignUpProgress from '../components/signup/SignUpProgress';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
-
-const passwordRules = [
-  {
-    label: 'Al menos una mayúscula',
-    test: (value) => /[A-Z]/.test(value),
-  },
-  {
-    label: 'Al menos una minúscula',
-    test: (value) => /[a-z]/.test(value),
-  },
-  {
-    label: 'Al menos un número',
-    test: (value) => /\d/.test(value),
-  },
-  {
-    label: 'Mínimo 8 caracteres',
-    test: (value) => value.length >= 8,
-  },
-];
-
-function RuleIcon({ isValid }) {
-  if (isValid) {
-    return (
-      <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
-        <Path
-          d="M3.25 8.3L6.45 11.45L12.85 4.75"
-          stroke="#4F8F45"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2.2}
-        />
-      </Svg>
-    );
-  }
-
-  return (
-    <Svg width={16} height={16} viewBox="0 0 16 16" fill="none">
-      <Path
-        d="M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5"
-        stroke={colors.mutedRose}
-        strokeLinecap="round"
-        strokeWidth={2}
-      />
-    </Svg>
-  );
-}
-
-function PasswordChecklist({ value }) {
-  return (
-    <View style={styles.passwordChecklist}>
-      {passwordRules.map((rule) => {
-        const isValid = rule.test(value);
-
-        return (
-          <View key={rule.label} style={styles.passwordRule}>
-            <RuleIcon isValid={isValid} />
-            <Text
-              style={[
-                styles.passwordRuleText,
-                isValid ? styles.passwordRuleTextValid : null,
-              ]}
-            >
-              {rule.label}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
 
 function validateFinalPassword(password) {
   if (!password) {
@@ -96,7 +28,7 @@ function validateFinalPassword(password) {
 
 function validateConfirmation(password, confirmation) {
   if (!confirmation) {
-    return 'Confirmá tu contraseña.';
+    return 'Confirma tu contraseña.';
   }
 
   if (password !== confirmation) {
@@ -203,27 +135,6 @@ const styles = StyleSheet.create({
   },
   passwordField: {
     marginBottom: 11,
-  },
-  passwordChecklist: {
-    marginBottom: 29,
-    rowGap: 8,
-    width: '100%',
-  },
-  passwordRule: {
-    alignItems: 'center',
-    columnGap: 8,
-    flexDirection: 'row',
-  },
-  passwordRuleText: {
-    color: colors.mutedRose,
-    flex: 1,
-    fontFamily: fonts.regular,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  passwordRuleTextValid: {
-    color: '#4F8F45',
-    fontFamily: fonts.medium,
   },
   submit: {
     alignItems: 'center',
