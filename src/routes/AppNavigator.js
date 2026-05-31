@@ -5,7 +5,9 @@ import { Platform } from 'react-native';
 import AppLayout from '../components/layout/AppLayout';
 import HomeScreen from '../pages/HomeScreen';
 import LoginScreen from '../pages/LoginScreen';
+import MyActivityScreen from '../pages/MyActivityScreen';
 import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
+import PenaltyPaymentScreen from '../pages/PenaltyPaymentScreen';
 import ProfileScreen from '../pages/ProfileScreen';
 import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
 import SignUpFinalScreen from '../pages/SignUpFinalScreen';
@@ -15,6 +17,8 @@ import SplashScreen from '../pages/SplashScreen';
 const ROUTES = {
   home: 'home',
   login: 'login',
+  myActivity: 'myActivity',
+  penaltyPayment: 'penaltyPayment',
   profile: 'profile',
   signUp: 'signUp',
   signUpAuthorizing: 'signUpAuthorizing',
@@ -26,6 +30,8 @@ const ROUTES = {
 const ROUTE_PATHS = {
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
+  [ROUTES.myActivity]: '/my-activity',
+  [ROUTES.penaltyPayment]: '/penalty-payment',
   [ROUTES.profile]: '/profile',
   [ROUTES.signUp]: '/sign-up',
   [ROUTES.signUpAuthorizing]: '/sign-up-authorizing',
@@ -76,6 +82,7 @@ export default function AppNavigator() {
   const [currentRoute, setCurrentRoute] = useState(
     () => getCurrentRouteInfo().route
   );
+  const [routeHistory, setRouteHistory] = useState([]);
 
   // Always show the splash screen briefly on startup across platforms.
   const [isLoading, setIsLoading] = useState(true);
@@ -108,6 +115,7 @@ export default function AppNavigator() {
       const routeInfo = getCurrentRouteInfo();
       setCurrentRoute(routeInfo.route);
       setIsLoading(false);
+      setRouteHistory([]);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -121,10 +129,64 @@ export default function AppNavigator() {
     }
   }, [currentRoute, isLoading]);
 
-  function navigateTo(route) {
+  function navigateTo(route, options = {}) {
+    if (route === currentRoute) {
+      return;
+    }
+
     setIsLoading(false);
+    if (!options.replace && currentRoute !== ROUTES.splash) {
+      setRouteHistory((currentHistory) => [...currentHistory, currentRoute]);
+    }
     setCurrentRoute(route);
-    updateBrowserRoute(route);
+    updateBrowserRoute(route, options.replace);
+  }
+
+  function getFallbackBackRoute(route) {
+    if (route === ROUTES.signUp) {
+      return ROUTES.login;
+    }
+
+    if (route === ROUTES.signUpAuthorizing) {
+      return ROUTES.signUp;
+    }
+
+    if (route === ROUTES.signUpFinal) {
+      return ROUTES.signUpAuthorizing;
+    }
+
+    if (route === ROUTES.paymentMethods) {
+      return ROUTES.signUpFinal;
+    }
+
+    if (route === ROUTES.penaltyPayment) {
+      return ROUTES.myActivity;
+    }
+
+    if (
+      route === ROUTES.profile ||
+      route === ROUTES.myActivity
+    ) {
+      return ROUTES.home;
+    }
+
+    return null;
+  }
+
+  function handleBackPress() {
+    const previousRoute =
+      routeHistory[routeHistory.length - 1] || getFallbackBackRoute(currentRoute);
+
+    if (!previousRoute || previousRoute === currentRoute) {
+      return;
+    }
+
+    setIsLoading(false);
+    setRouteHistory((currentHistory) =>
+      currentHistory.length > 0 ? currentHistory.slice(0, -1) : currentHistory
+    );
+    setCurrentRoute(previousRoute);
+    updateBrowserRoute(previousRoute, true);
   }
 
   function handleNavItemPress(itemId) {
@@ -134,6 +196,10 @@ export default function AppNavigator() {
 
     if (itemId === 'perfil') {
       navigateTo(ROUTES.profile);
+    }
+
+    if (itemId === 'actividad') {
+      navigateTo(ROUTES.myActivity);
     }
   }
 
@@ -149,18 +215,38 @@ export default function AppNavigator() {
     currentRoute === ROUTES.paymentMethods
       ? 'auth'
       : 'app';
+  const canNavigateBack =
+    currentRoute !== ROUTES.login &&
+    (
+      routeHistory.length > 0 ||
+      Boolean(getFallbackBackRoute(currentRoute))
+    );
 
   return (
     <AppLayout
       activeNavItem={
-        currentRoute === ROUTES.home ? 'inicio' : currentRoute === ROUTES.profile ? 'perfil' : ''
+        currentRoute === ROUTES.home
+          ? 'inicio'
+          : currentRoute === ROUTES.profile
+          ? 'perfil'
+          : currentRoute === ROUTES.myActivity ||
+            currentRoute === ROUTES.penaltyPayment
+          ? 'actividad'
+          : ''
       }
+      enableSwipeBack={canNavigateBack}
+      onBackPress={canNavigateBack ? handleBackPress : undefined}
       onNavItemPress={handleNavItemPress}
       showLogo={currentRoute !== ROUTES.home}
+      showNotifications={layoutVariant !== 'auth'}
       variant={layoutVariant}
     >
       {currentRoute === ROUTES.home ? (
         <HomeScreen />
+      ) : currentRoute === ROUTES.myActivity ? (
+        <MyActivityScreen onPayPenalty={() => navigateTo(ROUTES.penaltyPayment)} />
+      ) : currentRoute === ROUTES.penaltyPayment ? (
+        <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => navigateTo(ROUTES.login)} />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (

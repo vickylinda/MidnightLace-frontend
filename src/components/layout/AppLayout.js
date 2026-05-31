@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import {
   Image,
+  PanResponder,
   ScrollView,
   StyleSheet,
   View,
@@ -19,12 +21,17 @@ const BOTTOM_NAV_MIN_BOTTOM_PADDING = 5;
 export default function AppLayout({
   activeNavItem = 'inicio',
   children,
+  onBackPress,
   onNavItemPress,
+  enableSwipeBack = true,
   showLogo = true,
+  showNotifications = true,
   variant = 'auth',
 }) {
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const canSwipeBack = enableSwipeBack && typeof onBackPress === 'function';
+  const swipeBackEdgeWidth = Math.min(48, Math.max(30, width * 0.1));
   const topBarHeight = TOP_BAR_HEIGHT + insets.top;
   const bottomNavHeight =
     BOTTOM_NAV_CONTENT_HEIGHT +
@@ -42,10 +49,38 @@ export default function AppLayout({
     contentHeight + width * 0.2
   );
 
+  const swipeBackResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          canSwipeBack &&
+          gestureState.x0 <= swipeBackEdgeWidth &&
+          gestureState.dx > 8 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.4,
+        onPanResponderRelease: (_, gestureState) => {
+          if (
+            gestureState.dx > 76 &&
+            Math.abs(gestureState.dy) < 70
+          ) {
+            onBackPress();
+          }
+        },
+        onPanResponderTerminationRequest: () => true,
+      }),
+    [canSwipeBack, onBackPress, swipeBackEdgeWidth]
+  );
+
   return (
     <View style={styles.outer}>
-      <View style={styles.screen}>
-        <TopBar showLogo={showLogo} />
+      <View
+        style={styles.screen}
+        {...(canSwipeBack ? swipeBackResponder.panHandlers : {})}
+      >
+        <TopBar
+          onBackPress={onBackPress}
+          showLogo={showLogo}
+          showNotifications={showNotifications}
+        />
 
         <Image
           source={require('../../assets/decor/login-ornament.png')}

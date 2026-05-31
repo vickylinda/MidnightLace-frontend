@@ -155,11 +155,8 @@ const styles = StyleSheet.create({
   },
   activeItem: {
     backgroundColor: colors.cream,
-    columnGap: 5,
-    flexDirection: 'row',
-    flexGrow: 1.12,
-    minHeight: 38,
-    paddingHorizontal: 7,
+    minHeight: 50,
+    paddingHorizontal: 6,
   },
   label: {
     color: colors.cream,
@@ -171,8 +168,8 @@ const styles = StyleSheet.create({
   activeLabel: {
     color: colors.burgundy,
     fontFamily: fonts.semiBold,
-    fontSize: 13,
-    lineHeight: 17,
-    marginTop: 0,
+    fontSize: 10,
+    lineHeight: 13,
+    marginTop: 3,
   },
 });
