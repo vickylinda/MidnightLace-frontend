@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { Platform } from 'react-native';
 
+import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
+import AllAuctionsScreen from '../pages/AllAuctionsScreen';
 import HomeScreen from '../pages/HomeScreen';
 import LoginScreen from '../pages/LoginScreen';
 import MyActivityScreen from '../pages/MyActivityScreen';
@@ -15,6 +17,7 @@ import SignUpScreen from '../pages/SignUpScreen';
 import SplashScreen from '../pages/SplashScreen';
 
 const ROUTES = {
+  auctions: 'auctions',
   home: 'home',
   login: 'login',
   myActivity: 'myActivity',
@@ -28,6 +31,7 @@ const ROUTES = {
 };
 
 const ROUTE_PATHS = {
+  [ROUTES.auctions]: '/auctions',
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
   [ROUTES.myActivity]: '/my-activity',
@@ -164,6 +168,7 @@ export default function AppNavigator() {
     }
 
     if (
+      route === ROUTES.auctions ||
       route === ROUTES.profile ||
       route === ROUTES.myActivity
     ) {
@@ -198,6 +203,10 @@ export default function AppNavigator() {
       navigateTo(ROUTES.profile);
     }
 
+    if (itemId === 'subastas') {
+      navigateTo(ROUTES.auctions);
+    }
+
     if (itemId === 'actividad') {
       navigateTo(ROUTES.myActivity);
     }
@@ -225,7 +234,9 @@ export default function AppNavigator() {
   return (
     <AppLayout
       activeNavItem={
-        currentRoute === ROUTES.home
+        currentRoute === ROUTES.auctions
+          ? 'subastas'
+          : currentRoute === ROUTES.home
           ? 'inicio'
           : currentRoute === ROUTES.profile
           ? 'perfil'
@@ -235,14 +246,19 @@ export default function AppNavigator() {
           : ''
       }
       enableSwipeBack={canNavigateBack}
+      floatingAction={
+        currentRoute === ROUTES.auctions ? <AuctionSpeedDial /> : null
+      }
       onBackPress={canNavigateBack ? handleBackPress : undefined}
       onNavItemPress={handleNavItemPress}
       showLogo={currentRoute !== ROUTES.home}
       showNotifications={layoutVariant !== 'auth'}
       variant={layoutVariant}
     >
-      {currentRoute === ROUTES.home ? (
-        <HomeScreen />
+      {currentRoute === ROUTES.auctions ? (
+        <AllAuctionsScreen />
+      ) : currentRoute === ROUTES.home ? (
+        <HomeScreen onViewAllAuctions={() => navigateTo(ROUTES.auctions)} />
       ) : currentRoute === ROUTES.myActivity ? (
         <MyActivityScreen onPayPenalty={() => navigateTo(ROUTES.penaltyPayment)} />
       ) : currentRoute === ROUTES.penaltyPayment ? (

@@ -13,7 +13,7 @@ const featuredAuction = {
   status: 'en curso',
 };
 
-export default function HomeScreen() {
+export default function HomeScreen({ onViewAllAuctions }) {
   return (
     <View style={styles.screen}>
       <Image
@@ -40,7 +40,7 @@ export default function HomeScreen() {
         style={styles.card}
       />
 
-      <Pressable style={styles.allAuctionsButton} onPress={() => {}}>
+      <Pressable style={styles.allAuctionsButton} onPress={onViewAllAuctions}>
         <Text style={styles.allAuctionsLabel}>Ver todas las subastas</Text>
       </Pressable>
     </View>
