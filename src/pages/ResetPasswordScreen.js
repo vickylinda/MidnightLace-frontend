@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import AuthTextField from '../components/forms/AuthTextField';
 import PasswordChecklist from '../components/forms/PasswordChecklist';
 import PrimaryButton from '../components/forms/PrimaryButton';
+import { confirmPassword } from '../api/auth';
+import { getApiErrorMessage } from '../api/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import {
@@ -29,11 +37,13 @@ function SuccessIcon() {
   );
 }
 
-export default function ResetPasswordScreen({ onFinish }) {
+export default function ResetPasswordScreen({ onFinish, token }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
   const [countdown, setCountdown] = useState(REDIRECT_SECONDS);
   const [touched, setTouched] = useState({
     confirmation: false,
@@ -75,20 +85,51 @@ export default function ResetPasswordScreen({ onFinish }) {
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
     setTouched({
       confirmation: true,
       password: true,
     });
+    setServerError('');
 
-    if (isFormValid) {
+    if (!isFormValid) {
+      return;
+    }
+
+    if (!token) {
+      setServerError('Falta el token del link de recuperación.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await confirmPassword({ password, token });
       setIsCompleted(true);
+    } catch (error) {
+      setServerError(
+        getApiErrorMessage(error, 'No pudimos actualizar la contraseña.')
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   function handleFinishPress() {
     onFinish?.();
+  }
+
+  function handlePasswordChange(value) {
+    setPassword(value);
+    setIsCompleted(false);
+    setServerError('');
+  }
+
+  function handleConfirmationChange(value) {
+    setConfirmation(value);
+    setIsCompleted(false);
+    setServerError('');
   }
 
   return (
@@ -103,10 +144,7 @@ export default function ResetPasswordScreen({ onFinish }) {
         error={visiblePasswordError}
         label="Nueva contraseña"
         onBlur={() => handleBlur('password')}
-        onChangeText={(value) => {
-          setPassword(value);
-          setIsCompleted(false);
-        }}
+        onChangeText={handlePasswordChange}
         secureTextEntry
         style={styles.passwordField}
         textContentType="newPassword"
@@ -120,14 +158,13 @@ export default function ResetPasswordScreen({ onFinish }) {
         error={visibleConfirmationError}
         label="Confirme su contraseña"
         onBlur={() => handleBlur('confirmation')}
-        onChangeText={(value) => {
-          setConfirmation(value);
-          setIsCompleted(false);
-        }}
+        onChangeText={handleConfirmationChange}
         secureTextEntry
         textContentType="newPassword"
         value={confirmation}
       />
+
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
 
       {isCompleted ? (
         <View style={styles.successBox}>
@@ -151,10 +188,16 @@ export default function ResetPasswordScreen({ onFinish }) {
             <Text style={styles.loginButtonText}>Volver a iniciar sesión</Text>
           </Pressable>
         ) : (
-          <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-            Enviar
+          <PrimaryButton
+            disabled={!isFormValid || isSubmitting}
+            onPress={handleSubmit}
+          >
+            {isSubmitting ? 'Enviando' : 'Enviar'}
           </PrimaryButton>
         )}
+        {isSubmitting ? (
+          <ActivityIndicator color={colors.burgundy} style={styles.spinner} />
+        ) : null}
       </View>
 
       {isCompleted ? (
@@ -190,6 +233,14 @@ const styles = StyleSheet.create({
   passwordField: {
     marginBottom: 11,
   },
+  serverError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 16,
+    marginTop: -6,
+  },
   successBox: {
     alignItems: 'flex-start',
     backgroundColor: 'rgba(63, 127, 53, 0.1)',
@@ -222,6 +273,9 @@ const styles = StyleSheet.create({
   submit: {
     alignItems: 'center',
     marginTop: 7,
+  },
+  spinner: {
+    marginTop: 12,
   },
   loginButton: {
     alignItems: 'center',

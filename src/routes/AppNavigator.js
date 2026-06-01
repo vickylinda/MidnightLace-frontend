@@ -50,17 +50,24 @@ const ROUTE_PATHS = {
   [ROUTES.splash]: '/splash',
 };
 
+const ROUTE_PATH_ALIASES = {
+  '/confirmar': ROUTES.signUpFinal,
+  '/recuperar-clave': ROUTES.resetPassword,
+};
+
 function getCurrentRouteInfo() {
   // On web, infer route from the URL. On native platforms default to
   // showing the splash screen so the app has a consistent startup flow.
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     const normalizedPath = window.location.pathname.replace(/\/\/+$/, '') || '/';
-    const route = Object.keys(ROUTE_PATHS).find(
+    const matchedRoute = Object.keys(ROUTE_PATHS).find(
       (routeName) => ROUTE_PATHS[routeName] === normalizedPath
     );
+    const route = matchedRoute || ROUTE_PATH_ALIASES[normalizedPath];
 
     return {
       isExplicit: Boolean(route),
+      params: Object.fromEntries(new URLSearchParams(window.location.search)),
       route: route || ROUTES.login,
     };
   }
@@ -68,29 +75,38 @@ function getCurrentRouteInfo() {
   // Native (iOS/Android): start with the splash route and mark as not explicit
   return {
     isExplicit: false,
+    params: {},
     route: ROUTES.splash,
   };
 }
 
-function updateBrowserRoute(route, replace = false) {
+function updateBrowserRoute(route, replace = false, params = {}) {
   if (Platform.OS !== 'web' || typeof window === 'undefined') {
     return;
   }
 
   const nextPath = ROUTE_PATHS[route];
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  ).toString();
+  const nextUrl = query ? `${nextPath}?${query}` : nextPath;
   const currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+  const currentUrl = `${currentPath}${window.location.search}`;
 
-  if (!nextPath || currentPath === nextPath) {
+  if (!nextPath || currentUrl === nextUrl) {
     return;
   }
 
   const method = replace ? 'replaceState' : 'pushState';
-  window.history[method]({ route }, '', nextPath);
+  window.history[method]({ params, route }, '', nextUrl);
 }
 
 export default function AppNavigator() {
   const [currentRoute, setCurrentRoute] = useState(
     () => getCurrentRouteInfo().route
+  );
+  const [routeParams, setRouteParams] = useState(
+    () => getCurrentRouteInfo().params
   );
   const [routeHistory, setRouteHistory] = useState([]);
 
@@ -124,6 +140,7 @@ export default function AppNavigator() {
     const handlePopState = () => {
       const routeInfo = getCurrentRouteInfo();
       setCurrentRoute(routeInfo.route);
+      setRouteParams(routeInfo.params);
       setIsLoading(false);
       setRouteHistory([]);
     };
@@ -135,9 +152,9 @@ export default function AppNavigator() {
 
   useEffect(() => {
     if (!isLoading && currentRoute !== ROUTES.splash) {
-      updateBrowserRoute(currentRoute, true);
+      updateBrowserRoute(currentRoute, true, routeParams);
     }
-  }, [currentRoute, isLoading]);
+  }, [currentRoute, isLoading, routeParams]);
 
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
@@ -149,7 +166,8 @@ export default function AppNavigator() {
       setRouteHistory((currentHistory) => [...currentHistory, currentRoute]);
     }
     setCurrentRoute(route);
-    updateBrowserRoute(route, options.replace);
+    setRouteParams(options.params || {});
+    updateBrowserRoute(route, options.replace, options.params || {});
   }
 
   function getFallbackBackRoute(route) {
@@ -205,6 +223,7 @@ export default function AppNavigator() {
       currentHistory.length > 0 ? currentHistory.slice(0, -1) : currentHistory
     );
     setCurrentRoute(previousRoute);
+    setRouteParams({});
     updateBrowserRoute(previousRoute, true);
   }
 
@@ -282,19 +301,19 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => navigateTo(ROUTES.login)} />
       ) : currentRoute === ROUTES.forgotPassword ? (
-        <ForgotPasswordScreen
-          onResetLinkPress={() => navigateTo(ROUTES.resetPassword)}
-        />
+        <ForgotPasswordScreen />
       ) : currentRoute === ROUTES.resetPassword ? (
         <ResetPasswordScreen
+          token={routeParams.token}
           onFinish={() => navigateTo(ROUTES.login, { replace: true })}
         />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
         <SignUpAuthorizingScreen
-          onAuthorized={() => navigateTo(ROUTES.signUpFinal)}
+          onAuthorized={() => navigateTo(ROUTES.login, { replace: true })}
         />
       ) : currentRoute === ROUTES.signUpFinal ? (
         <SignUpFinalScreen
+          token={routeParams.token}
           onSubmitSuccess={() => navigateTo(ROUTES.paymentMethods)}
         />
       ) : currentRoute === ROUTES.paymentMethods ? (

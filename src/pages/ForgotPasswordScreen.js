@@ -10,11 +10,13 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import AuthTextField from '../components/forms/AuthTextField';
 import PrimaryButton from '../components/forms/PrimaryButton';
+import { recoverPassword } from '../api/auth';
+import { getApiErrorMessage } from '../api/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import { validateEmail } from '../utils/authValidation';
 
-const REDIRECT_SECONDS = 5;
+const RESEND_SECONDS = 10;
 
 function MailSentIcon() {
   return (
@@ -42,54 +44,59 @@ function MailSentIcon() {
   );
 }
 
-export default function ForgotPasswordScreen({ onResetLinkPress }) {
+export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isEmailSent, setIsEmailSent] = useState(false);
-  const [countdown, setCountdown] = useState(REDIRECT_SECONDS);
-  const sendingTimerRef = useRef(null);
+  const [countdown, setCountdown] = useState(0);
+  const [serverError, setServerError] = useState('');
   const countdownTimerRef = useRef(null);
-  const redirectTimerRef = useRef(null);
 
   const emailError = validateEmail(email);
   const visibleEmailError = touched || submitted ? emailError : '';
   const isFormValid = !emailError;
 
   function clearTimers() {
-    clearTimeout(sendingTimerRef.current);
     clearInterval(countdownTimerRef.current);
-    clearTimeout(redirectTimerRef.current);
   }
 
   useEffect(() => () => clearTimers(), []);
 
-  function startRedirectCountdown() {
-    setCountdown(REDIRECT_SECONDS);
+  function startResendCountdown() {
+    setCountdown(RESEND_SECONDS);
     countdownTimerRef.current = setInterval(() => {
-      setCountdown((currentValue) => Math.max(currentValue - 1, 0));
+      setCountdown((currentValue) => {
+        if (currentValue <= 1) {
+          clearInterval(countdownTimerRef.current);
+          return 0;
+        }
+
+        return currentValue - 1;
+      });
     }, 1000);
-    redirectTimerRef.current = setTimeout(() => {
-      clearInterval(countdownTimerRef.current);
-      onResetLinkPress?.();
-    }, REDIRECT_SECONDS * 1000);
   }
 
-  function sendRecoveryEmail() {
+  async function sendRecoveryEmail() {
     clearTimers();
     setIsSending(true);
-    setIsEmailSent(false);
-    setCountdown(REDIRECT_SECONDS);
+    setServerError('');
 
-    sendingTimerRef.current = setTimeout(() => {
-      setIsSending(false);
+    try {
+      await recoverPassword(email);
       setIsEmailSent(true);
-      startRedirectCountdown();
-    }, 900);
+      startResendCountdown();
+    } catch (error) {
+      setServerError(
+        getApiErrorMessage(error, 'No pudimos enviar el mail de recuperación.')
+      );
+    } finally {
+      setIsSending(false);
+    }
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
     setTouched(true);
 
@@ -97,7 +104,7 @@ export default function ForgotPasswordScreen({ onResetLinkPress }) {
       return;
     }
 
-    sendRecoveryEmail();
+    await sendRecoveryEmail();
   }
 
   function handleEmailChange(value) {
@@ -105,7 +112,8 @@ export default function ForgotPasswordScreen({ onResetLinkPress }) {
     setEmail(value);
     setIsSending(false);
     setIsEmailSent(false);
-    setCountdown(REDIRECT_SECONDS);
+    setServerError('');
+    setCountdown(0);
   }
 
   return (
@@ -134,12 +142,11 @@ export default function ForgotPasswordScreen({ onResetLinkPress }) {
             <Text style={styles.successText}>
               Te enviamos un link a {email.trim()} para restablecer tu contraseña.
             </Text>
-            <Text style={styles.countdownText}>
-              Redirigiendo en {countdown} segundos...
-            </Text>
           </View>
         </View>
       ) : null}
+
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
 
       <View style={styles.submit}>
         {!isEmailSent ? (
@@ -155,8 +162,19 @@ export default function ForgotPasswordScreen({ onResetLinkPress }) {
       {isEmailSent ? (
         <View style={styles.resendRow}>
           <Text style={styles.resendText}>¿No recibiste el mail? </Text>
-          <Pressable accessibilityRole="button" onPress={sendRecoveryEmail}>
-            <Text style={styles.resendLink}>Reenviar mail</Text>
+          <Pressable
+            accessibilityRole="button"
+            disabled={countdown > 0 || isSending}
+            onPress={sendRecoveryEmail}
+          >
+            <Text
+              style={[
+                styles.resendLink,
+                countdown > 0 || isSending ? styles.resendLinkDisabled : null,
+              ]}
+            >
+              {countdown > 0 ? `Reenviar en ${countdown}s` : 'Reenviar mail'}
+            </Text>
           </Pressable>
         </View>
       ) : null}
@@ -214,12 +232,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
-  countdownText: {
-    color: colors.textBurgundy,
-    fontFamily: fonts.semiBold,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 6,
+  serverError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 18,
+    marginTop: -7,
   },
   submit: {
     alignItems: 'center',
@@ -246,5 +265,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 16,
     textDecorationLine: 'underline',
+  },
+  resendLinkDisabled: {
+    opacity: 0.55,
   },
 });

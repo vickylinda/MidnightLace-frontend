@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -23,21 +23,35 @@ import PasswordChecklist, {
 } from '../components/forms/PasswordChecklist';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import PaymentMethodsScreen from './PaymentMethodsScreen';
+import { changePassword } from '../api/auth';
+import { findCountryIdByName } from '../api/countries';
+import { getApiErrorMessage } from '../api/http';
+import {
+  deletePaymentMethod,
+  listPaymentMethods,
+} from '../api/paymentMethods';
+import {
+  getProfile,
+  mapProfileToAddress,
+  updateProfile,
+} from '../api/profile';
+import { resolveApiAssetUrl } from '../api/config';
+import { clearSession } from '../api/session';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 
 const INITIAL_ADDRESS = {
-  addressLine: 'Av. Callao 1234, CABA, Argentina',
+  addressLine: '',
   apartment: '',
-  country: 'Argentina',
-  displayAddressLine: 'Av. Callao 1234, CABA, Argentina',
+  country: '',
+  displayAddressLine: '',
   latitude: null,
-  locality: 'CABA',
+  locality: '',
   longitude: null,
-  number: '1234',
+  number: '',
   postalCode: '',
-  province: 'Buenos Aires',
-  street: 'Av. Callao',
+  province: '',
+  street: '',
 };
 
 const REQUIRED_ADDRESS_FIELDS = [
@@ -48,35 +62,73 @@ const REQUIRED_ADDRESS_FIELDS = [
   'number',
 ];
 
-const mockProfile = {
-  category: 'Oro',
-  email: 'camila.rose@gmail.com',
-  firstName: 'Camila',
-  lastName: 'Rose',
-};
-
 const initialProfileImage = require('../assets/profile/profile-pic.jpg');
 
-const initialPayments = [
-  {
-    id: 'card-1',
-    icon: 'card',
-    lines: ['Visa terminada en 1234', 'Vencimiento: 07/2028'],
-    title: 'Tarjeta de credito',
-  },
-  {
-    id: 'bank-1',
-    icon: 'bank',
-    lines: ['Banco Galicia', 'CBU: 28505909 40090418135201'],
-    title: 'Cuenta Bancaria',
-  },
-  {
-    id: 'check-1',
-    icon: 'check',
-    lines: ['N° 00034567'],
-    title: 'Cheque certificado',
-  },
-];
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '') || '';
+}
+
+function getProfileAssetUrl(profile, keys) {
+  for (const key of keys) {
+    const value = profile?.[key];
+
+    if (typeof value === 'string' && value) {
+      return resolveApiAssetUrl(value);
+    }
+
+    if (value?.url) {
+      return resolveApiAssetUrl(value.url);
+    }
+  }
+
+  return '';
+}
+
+function getProfilePhotoSource(profile) {
+  const photoUrl = getProfileAssetUrl(profile, [
+    'urlFotoPerfil',
+    'fotoPerfilUrl',
+    'fotoPerfil',
+  ]);
+
+  return photoUrl ? { uri: photoUrl } : initialProfileImage;
+}
+
+function getDniFilesFromProfile(profile) {
+  const frontUrl = getProfileAssetUrl(profile, [
+    'urlFotoDocFrente',
+    'fotoDocFrenteUrl',
+    'fotoDocFrente',
+  ]);
+  const backUrl = getProfileAssetUrl(profile, [
+    'urlFotoDocDorso',
+    'fotoDocDorsoUrl',
+    'fotoDocDorso',
+  ]);
+
+  return [
+    frontUrl
+      ? {
+          id: 'dni-front',
+          name: 'dni-frente',
+          uri: frontUrl,
+        }
+      : null,
+    backUrl
+      ? {
+          id: 'dni-back',
+          name: 'dni-dorso',
+          uri: backUrl,
+        }
+      : null,
+  ].filter(Boolean);
+}
+
+function getDniStatusText(files) {
+  return files.length
+    ? `${files.length} archivo${files.length === 1 ? '' : 's'} cargado${files.length === 1 ? '' : 's'}`
+    : 'Sin archivos cargados';
+}
 
 function normalizeAddressPart(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
@@ -490,14 +542,16 @@ function validatePassword(password) {
 
   return passwordRules.every((rule) => rule.test(password))
     ? ''
-    : 'La contraseña todavia no cumple los requisitos.';
+    : 'La contraseña todavía no cumple los requisitos.';
 }
 
-function PasswordEditModal({ onClose, visible }) {
+function PasswordEditModal({ onClose, onSave, visible }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -505,6 +559,8 @@ function PasswordEditModal({ onClose, visible }) {
       setNewPassword('');
       setConfirmation('');
       setSubmitted(false);
+      setServerError('');
+      setIsSaving(false);
     }
   }, [visible]);
 
@@ -518,11 +574,23 @@ function PasswordEditModal({ onClose, visible }) {
   };
   const isValid = Object.values(errors).every((error) => !error);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
+    setServerError('');
 
     if (isValid) {
-      onClose();
+      try {
+        setIsSaving(true);
+        await onSave?.({
+          currentPassword,
+          newPassword,
+        });
+        onClose();
+      } catch (error) {
+        setServerError(getApiErrorMessage(error));
+      } finally {
+        setIsSaving(false);
+      }
     }
   }
 
@@ -551,10 +619,11 @@ function PasswordEditModal({ onClose, visible }) {
         secureTextEntry
         value={confirmation}
       />
+      {serverError ? <Text style={styles.modalError}>{serverError}</Text> : null}
 
       <View style={styles.modalSubmit}>
-        <PrimaryButton disabled={!isValid} onPress={handleSubmit}>
-          Guardar
+        <PrimaryButton disabled={!isValid || isSaving} onPress={handleSubmit}>
+          {isSaving ? 'Guardando...' : 'Guardar'}
         </PrimaryButton>
       </View>
     </ProfileModal>
@@ -578,27 +647,56 @@ function LogoutModal({ onClose, onConfirm, visible }) {
 }
 
 export default function ProfileScreen({ onLogout }) {
+  const [profile, setProfile] = useState(null);
+  const [profileError, setProfileError] = useState('');
   const [address, setAddress] = useState(INITIAL_ADDRESS);
   const [profileImage, setProfileImage] = useState(initialProfileImage);
   const [isProfileImageMenuOpen, setIsProfileImageMenuOpen] = useState(false);
-  const [dniFiles, setDniFiles] = useState([
-    {
-      id: 'dni-front',
-      name: 'dni-frente.jpg',
-      uri: '',
-    },
-    {
-      id: 'dni-back',
-      name: 'dni-dorso.jpg',
-      uri: '',
-    },
-  ]);
-  const [payments, setPayments] = useState(initialPayments);
+  const [dniFiles, setDniFiles] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [modal, setModal] = useState(null);
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const addressDisplay = address.displayAddressLine || buildAddressSearchValue(address);
+  const profileFirstName = firstPresent(profile?.nombre, '-');
+  const profileLastName = firstPresent(profile?.apellido, '-');
+  const profileEmail = firstPresent(profile?.email, '-');
+  const profileCategory = firstPresent(
+    profile?.categoria?.nombre,
+    profile?.categoria,
+    'Sin categoria'
+  );
 
-  function applyProfileImage(asset) {
+  async function loadProfileData() {
+    setProfileError('');
+
+    const [profileResult, paymentsResult] = await Promise.allSettled([
+      getProfile(),
+      listPaymentMethods(),
+    ]);
+
+    if (profileResult.status === 'fulfilled') {
+      const nextProfile = profileResult.value;
+
+      setProfile(nextProfile);
+      setAddress(mapProfileToAddress(nextProfile));
+      setProfileImage(getProfilePhotoSource(nextProfile));
+      setDniFiles(getDniFilesFromProfile(nextProfile));
+    } else {
+      setProfileError(getApiErrorMessage(profileResult.reason));
+    }
+
+    if (paymentsResult.status === 'fulfilled') {
+      setPayments(paymentsResult.value);
+    } else {
+      setProfileError(getApiErrorMessage(paymentsResult.reason));
+    }
+  }
+
+  useEffect(() => {
+    loadProfileData();
+  }, []);
+
+  async function applyProfileImage(asset) {
     if (!asset?.uri) {
       setIsProfileImageMenuOpen(false);
       return;
@@ -606,6 +704,14 @@ export default function ProfileScreen({ onLogout }) {
 
     setProfileImage({ uri: asset.uri });
     setIsProfileImageMenuOpen(false);
+
+    try {
+      const updatedProfile = await updateProfile({ profilePhoto: asset });
+      setProfile(updatedProfile);
+      setProfileImage(getProfilePhotoSource(updatedProfile));
+    } catch (error) {
+      setProfileError(getApiErrorMessage(error));
+    }
   }
 
   async function pickProfileFromLibrary() {
@@ -665,46 +771,53 @@ export default function ProfileScreen({ onLogout }) {
     setEditingPaymentId(null);
   }
 
-  function handleAddressSave(nextAddress) {
-    setAddress(nextAddress);
-    closeModal();
+  async function handleAddressSave(nextAddress) {
+    try {
+      const countryId = await findCountryIdByName(nextAddress.country);
+      const updatedProfile = await updateProfile({
+        address: nextAddress,
+        countryId,
+      });
+
+      setProfile(updatedProfile);
+      setAddress(mapProfileToAddress(updatedProfile));
+      closeModal();
+    } catch (error) {
+      setProfileError(getApiErrorMessage(error));
+    }
   }
 
-  function handlePaymentSave(selectedMethod) {
-    if (!selectedMethod) {
-      closeModal();
+  async function handleDniChange(nextFiles) {
+    setDniFiles(nextFiles);
+
+    if (nextFiles.length < 2) {
       return;
     }
 
-    if (editingPaymentId) {
-      setPayments((currentPayments) =>
-        currentPayments.map((payment) =>
-          payment.id === editingPaymentId
-            ? {
-                ...payment,
-                lines: ['Actualizado recientemente'],
-              }
-            : payment
-        )
-      );
-    } else {
-      setPayments((currentPayments) => [
-        ...currentPayments,
-        {
-          id: `payment-${Date.now()}`,
-          icon: selectedMethod === 'check' ? 'check' : selectedMethod === 'bank' ? 'bank' : 'card',
-          lines: ['Agregado recientemente'],
-          title:
-            selectedMethod === 'check'
-              ? 'Cheque certificado'
-              : selectedMethod === 'bank'
-              ? 'Cuenta Bancaria'
-              : 'Tarjeta de credito',
-        },
-      ]);
-    }
+    try {
+      const updatedProfile = await updateProfile({
+        dniBack: nextFiles[1],
+        dniFront: nextFiles[0],
+      });
 
-    closeModal();
+      setProfile(updatedProfile);
+      setDniFiles(getDniFilesFromProfile(updatedProfile));
+    } catch (error) {
+      setProfileError(getApiErrorMessage(error));
+    }
+  }
+
+  async function handlePaymentSave() {
+    try {
+      if (editingPaymentId) {
+        await deletePaymentMethod(editingPaymentId);
+      }
+
+      setPayments(await listPaymentMethods());
+      closeModal();
+    } catch (error) {
+      setProfileError(getApiErrorMessage(error));
+    }
   }
 
   function handlePaymentEdit(paymentId) {
@@ -712,14 +825,32 @@ export default function ProfileScreen({ onLogout }) {
     setModal('payment');
   }
 
-  function handlePaymentDelete(paymentId) {
-    setPayments((currentPayments) =>
-      currentPayments.filter((payment) => payment.id !== paymentId)
-    );
+  async function handlePaymentDelete(paymentId) {
+    try {
+      await deletePaymentMethod(paymentId);
+      setPayments((currentPayments) =>
+        currentPayments.filter((payment) => payment.id !== paymentId)
+      );
+    } catch (error) {
+      setProfileError(getApiErrorMessage(error));
+    }
+  }
+
+  async function handlePasswordSave({ currentPassword, newPassword }) {
+    await changePassword({
+      currentPassword,
+      newPassword,
+    });
+  }
+
+  function handleLogoutConfirm() {
+    clearSession();
+    onLogout?.();
   }
 
   return (
     <View style={styles.screen}>
+      {profileError ? <Text style={styles.profileError}>{profileError}</Text> : null}
       <View style={styles.profileCard}>
         <View style={styles.avatarWrapper}>
           <Image source={profileImage} style={styles.avatar} />
@@ -749,19 +880,19 @@ export default function ProfileScreen({ onLogout }) {
         </View>
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>
-            {mockProfile.firstName} {mockProfile.lastName}
+            {profileFirstName} {profileLastName}
           </Text>
-          <Text style={styles.profileEmail}>{mockProfile.email}</Text>
+          <Text style={styles.profileEmail}>{profileEmail}</Text>
           <View style={styles.categoryPill}>
             <CrownIcon />
-            <Text style={styles.categoryText}>Categoría: {mockProfile.category}</Text>
+            <Text style={styles.categoryText}>Categoria: {profileCategory}</Text>
           </View>
         </View>
       </View>
 
       <SectionCard title="Datos personales">
-        <InfoRow label="Nombre" value={mockProfile.firstName} />
-        <InfoRow label="Apellido" value={mockProfile.lastName} />
+        <InfoRow label="Nombre" value={profileFirstName} />
+        <InfoRow label="Apellido" value={profileLastName} />
         <InfoRow label="Pais" value={address.country} />
         <InfoRow
           action={
@@ -785,7 +916,7 @@ export default function ProfileScreen({ onLogout }) {
             </IconButton>
           }
           label="Fotos DNI"
-          value="Actualizadas: 10/04/26"
+          value={getDniStatusText(dniFiles)}
         />
       </SectionCard>
 
@@ -860,7 +991,7 @@ export default function ProfileScreen({ onLogout }) {
       />
       <DniEditModal
         files={dniFiles}
-        onChange={setDniFiles}
+        onChange={handleDniChange}
         onClose={closeModal}
         visible={modal === 'dni'}
       />
@@ -871,11 +1002,12 @@ export default function ProfileScreen({ onLogout }) {
       />
       <PasswordEditModal
         onClose={closeModal}
+        onSave={handlePasswordSave}
         visible={modal === 'password'}
       />
       <LogoutModal
         onClose={closeModal}
-        onConfirm={onLogout}
+        onConfirm={handleLogoutConfirm}
         visible={modal === 'logout'}
       />
     </View>
@@ -909,6 +1041,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 38,
     paddingTop: 24,
     zIndex: 2,
+  },
+  profileError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 12,
   },
   profileCard: {
     alignItems: 'center',
@@ -1165,6 +1304,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 19,
     marginBottom: 12,
+  },
+  modalError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: 10,
   },
   modalRow: {
     columnGap: 28,

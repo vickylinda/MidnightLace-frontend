@@ -5,6 +5,8 @@ import AuthTextField from '../components/forms/AuthTextField';
 import PasswordChecklist from '../components/forms/PasswordChecklist';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import SignUpProgress from '../components/signup/SignUpProgress';
+import { confirmPassword } from '../api/auth';
+import { getApiErrorMessage } from '../api/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import {
@@ -12,10 +14,12 @@ import {
   validatePasswordConfirmation,
 } from '../utils/authValidation';
 
-export default function SignUpFinalScreen({ onSubmitSuccess }) {
+export default function SignUpFinalScreen({ onSubmitSuccess, token }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState('');
   const [touched, setTouched] = useState({
     confirmation: false,
     password: false,
@@ -36,15 +40,34 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
     setTouched({
       confirmation: true,
       password: true,
     });
+    setServerError('');
 
-    if (isFormValid) {
+    if (!isFormValid) {
+      return;
+    }
+
+    if (!token) {
+      setServerError('Falta el token del link de registro.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await confirmPassword({ password, token });
       onSubmitSuccess?.();
+    } catch (error) {
+      setServerError(
+        getApiErrorMessage(error, 'No pudimos generar tu clave.')
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -59,7 +82,10 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
         error={visiblePasswordError}
         label="Contraseña"
         onBlur={() => handleBlur('password')}
-        onChangeText={setPassword}
+        onChangeText={(value) => {
+          setPassword(value);
+          setServerError('');
+        }}
         secureTextEntry
         style={styles.passwordField}
         value={password}
@@ -71,14 +97,19 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
         error={visibleConfirmationError}
         label="Confirme su contraseña"
         onBlur={() => handleBlur('confirmation')}
-        onChangeText={setConfirmation}
+        onChangeText={(value) => {
+          setConfirmation(value);
+          setServerError('');
+        }}
         secureTextEntry
         value={confirmation}
       />
 
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+
       <View style={styles.submit}>
-        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-          Enviar
+        <PrimaryButton disabled={!isFormValid || isSubmitting} onPress={handleSubmit}>
+          {isSubmitting ? 'Enviando' : 'Enviar'}
         </PrimaryButton>
       </View>
     </View>
@@ -113,5 +144,12 @@ const styles = StyleSheet.create({
   submit: {
     alignItems: 'center',
     marginTop: 34,
+  },
+  serverError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: -5,
   },
 });

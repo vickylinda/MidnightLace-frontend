@@ -82,7 +82,9 @@ function getAssetName(asset, fallbackName) {
 
 function buildUploadedFile(asset, index) {
   return {
+    file: asset?.file,
     id: `${Date.now()}-${index}-${asset?.uri || asset?.name || 'dni'}`,
+    mimeType: asset?.mimeType || asset?.type,
     name: getAssetName(asset, `dni-${index + 1}`),
     uri: asset?.uri || '',
   };

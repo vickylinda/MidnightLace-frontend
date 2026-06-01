@@ -1,88 +1,55 @@
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import AuctionCard from '../components/auctions/AuctionCard';
+import { listAuctions } from '../api/auctions';
+import { getApiErrorMessage } from '../api/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 
-const auctions = [
-  {
-    category: 'Especial',
-    dateTime: '20/04/2026 · 18:30h',
-    imageSource: require('../assets/auctions/gyaru-deluxe.png'),
-    location: 'La Rural, Palermo, CABA',
-    pieces: 6,
-    status: 'en curso',
-    title: 'Gyaru Deluxe',
-  },
-  {
-    category: 'Especial',
-    dateTime: '20/04/2026 · 21:00h',
-    imageSource: require('../assets/auctions/y2k-reloaded.png'),
-    location: 'Complejo C Art Media, CABA',
-    pieces: 8,
-    status: 'en curso',
-    title: 'Y2K Reloaded',
-  },
-  {
-    category: 'Plata',
-    dateTime: '20/04/2026 · 17:00h',
-    imageSource: require('../assets/auctions/sweet-dreams.png'),
-    location: 'Centro Cultural Recoleta, CABA',
-    pieces: 5,
-    status: 'en curso',
-    title: 'Sweet Dreams',
-  },
-  {
-    category: 'Oro',
-    dateTime: '20/04/2026 · 20:00h',
-    imageSource: require('../assets/auctions/gothic-night.png'),
-    location: 'Palacio San Miguel, CABA',
-    pieces: 2,
-    status: 'en curso',
-    title: 'Gothic Night',
-  },
-  {
-    category: 'Oro',
-    dateTime: '20/04/2026 · 19:30h',
-    imageSource: require('../assets/auctions/strawberry-pattern-special.jpeg'),
-    location: 'Hotel Alvear Art, CABA',
-    pieces: 3,
-    status: 'en curso',
-    title: 'Strawberry Bloom',
-  },
-  {
-    category: 'Platino',
-    dateTime: '20/04/2026 · 21:00h',
-    imageSource: require('../assets/auctions/visual-eclipse.png'),
-    location: 'Complejo Art Media, CABA',
-    pieces: 5,
-    status: 'en curso',
-    title: 'Visual Eclipse',
-  },
-  {
-    category: 'Comun',
-    dateTime: '02/09/2026 · 19:00h',
-    imageSource: require('../assets/auctions/ganguro-fever.png'),
-    location: 'Niceto Club, Palermo, CABA',
-    pieces: 7,
-    status: 'programada',
-    title: 'Ganguro Fever',
-  },
-  {
-    category: 'Plata',
-    dateTime: '05/04/2026 · 16:30h',
-    imageSource: require('../assets/auctions/fairy-magic.png'),
-    location: 'Usina del Arte, CABA',
-    pieces: 3,
-    status: 'finalizado',
-    title: 'Fairy Magic',
-  },
-];
-
 export default function AllAuctionsScreen() {
+  const [auctions, setAuctions] = useState([]);
+  const [screenError, setScreenError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadAuctions() {
+      try {
+        const nextAuctions = await listAuctions();
+
+        if (isMounted) {
+          setAuctions(nextAuctions);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setScreenError(getApiErrorMessage(error));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadAuctions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Todas las subastas</Text>
+
+      {screenError ? <Text style={styles.errorText}>{screenError}</Text> : null}
+      {isLoading ? <Text style={styles.emptyText}>Cargando subastas...</Text> : null}
+
+      {!isLoading && !auctions.length && !screenError ? (
+        <Text style={styles.emptyText}>No hay subastas disponibles.</Text>
+      ) : null}
 
       <View style={styles.list}>
         {auctions.map((auction) => (
@@ -90,7 +57,7 @@ export default function AllAuctionsScreen() {
             category={auction.category}
             dateTime={auction.dateTime}
             imageSource={auction.imageSource}
-            key={auction.title}
+            key={auction.id || auction.title}
             location={auction.location}
             pieces={auction.pieces}
             status={auction.status}
@@ -116,6 +83,24 @@ const styles = StyleSheet.create({
     fontSize: 24,
     lineHeight: 32,
     marginBottom: 16,
+    maxWidth: 327,
+    width: '100%',
+  },
+  errorText: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 12,
+    maxWidth: 327,
+    width: '100%',
+  },
+  emptyText: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 12,
     maxWidth: 327,
     width: '100%',
   },

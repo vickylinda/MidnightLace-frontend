@@ -1,19 +1,45 @@
+﻿import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AuctionCard from '../components/auctions/AuctionCard';
+import { listAuctions } from '../api/auctions';
+import { getApiErrorMessage } from '../api/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 
-const featuredAuction = {
-  category: 'Oro',
-  dateTime: '22/08/2026 · 19:30h',
-  imageSource: require('../assets/auctions/strawberry-pattern-special.jpeg'),
-  location: 'Hotel Alvear Art, CABA',
-  pieces: 3,
-  status: 'en curso',
-};
-
 export default function HomeScreen({ onViewAllAuctions }) {
+  const [featuredAuction, setFeaturedAuction] = useState(null);
+  const [screenError, setScreenError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadFeaturedAuction() {
+      try {
+        const auctions = await listAuctions();
+
+        if (isMounted) {
+          setFeaturedAuction(auctions[0] || null);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setScreenError(getApiErrorMessage(error));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    loadFeaturedAuction();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <View style={styles.screen}>
       <Image
@@ -30,15 +56,23 @@ export default function HomeScreen({ onViewAllAuctions }) {
         </View>
       </View>
 
-      <AuctionCard
-        category={featuredAuction.category}
-        dateTime={featuredAuction.dateTime}
-        imageSource={featuredAuction.imageSource}
-        location={featuredAuction.location}
-        pieces={featuredAuction.pieces}
-        status={featuredAuction.status}
-        style={styles.card}
-      />
+      {screenError ? <Text style={styles.errorText}>{screenError}</Text> : null}
+      {isLoading ? <Text style={styles.emptyText}>Cargando subasta...</Text> : null}
+
+      {featuredAuction ? (
+        <AuctionCard
+          category={featuredAuction.category}
+          dateTime={featuredAuction.dateTime}
+          imageSource={featuredAuction.imageSource}
+          location={featuredAuction.location}
+          pieces={featuredAuction.pieces}
+          status={featuredAuction.status}
+          style={styles.card}
+          title={featuredAuction.title}
+        />
+      ) : !isLoading && !screenError ? (
+        <Text style={styles.emptyText}>No hay subastas disponibles.</Text>
+      ) : null}
 
       <Pressable style={styles.allAuctionsButton} onPress={onViewAllAuctions}>
         <Text style={styles.allAuctionsLabel}>Ver todas las subastas</Text>
@@ -95,6 +129,21 @@ const styles = StyleSheet.create({
   },
   card: {
     maxWidth: 327,
+  },
+  emptyText: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   allAuctionsButton: {
     alignItems: 'center',

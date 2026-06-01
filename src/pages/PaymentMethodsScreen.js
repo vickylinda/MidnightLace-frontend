@@ -16,6 +16,8 @@ import MaestroIcon from '../assets/payment/maestro.svg';
 import MastercardIcon from '../assets/payment/mastercard.svg';
 import UnionpayIcon from '../assets/payment/unionpay.svg';
 import VisaIcon from '../assets/payment/visa.svg';
+import { createPaymentMethod } from '../api/paymentMethods';
+import { getApiErrorMessage } from '../api/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 
@@ -668,6 +670,8 @@ export default function PaymentMethodsScreen({
   const [checkData, setCheckData] = useState(INITIAL_CHECK);
   const [focusedCardField, setFocusedCardField] = useState('cardNumber');
   const [method, setMethod] = useState('');
+  const [serverError, setServerError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState({});
 
@@ -776,8 +780,9 @@ export default function PaymentMethodsScreen({
     updateCheck('emissionDate', formatShortDateInput(value));
   }
 
-  function handleSave() {
+  async function handleSave() {
     setSubmitted(true);
+    setServerError('');
     setTouched((currentTouched) => ({
       ...currentTouched,
       ...Object.keys(currentErrors).reduce(
@@ -789,8 +794,24 @@ export default function PaymentMethodsScreen({
       ),
     }));
 
-    if (canSave) {
-      onContinue?.(method);
+    if (!canSave) {
+      return;
+    }
+
+    const data =
+      method === 'bank' ? bankData : method === 'card' ? cardData : checkData;
+
+    setIsSaving(true);
+
+    try {
+      const createdPayment = await createPaymentMethod({ data, method });
+      onContinue?.({ data, method, payment: createdPayment });
+    } catch (error) {
+      setServerError(
+        getApiErrorMessage(error, 'No pudimos guardar el medio de pago.')
+      );
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -812,6 +833,7 @@ export default function PaymentMethodsScreen({
           setMethod(nextMethod);
           setSubmitted(false);
           setTouched({});
+          setServerError('');
         }}
         options={PAYMENT_METHODS}
         placeholder="Selecciona un medio de pago"
@@ -1008,13 +1030,15 @@ export default function PaymentMethodsScreen({
         </View>
       ) : null}
 
+      {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+
       {method || allowSkip ? (
         <View style={styles.submit}>
           <PrimaryButton
-            disabled={method ? !canSave : false}
+            disabled={method ? !canSave || isSaving : false}
             onPress={method ? handleSave : () => onContinue?.('')}
           >
-            {method ? 'Guardar' : 'Omitir'}
+            {method ? (isSaving ? 'Guardando' : 'Guardar') : 'Omitir'}
           </PrimaryButton>
 
           {allowSkip && method ? (
@@ -1412,6 +1436,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     lineHeight: 18,
+  },
+  serverError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: -8,
   },
   submit: {
     alignItems: 'center',

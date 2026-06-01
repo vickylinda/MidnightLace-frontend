@@ -4,6 +4,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import AuthTextField from '../components/forms/AuthTextField';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import RememberCheckbox from '../components/forms/RememberCheckbox';
+import { getApiErrorMessage } from '../api/http';
+import { loginUser } from '../api/auth';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import { validateEmail, validatePassword } from '../utils/authValidation';
@@ -17,6 +19,8 @@ export default function LoginScreen({
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [touched, setTouched] = useState({
     email: false,
     password: false,
@@ -35,15 +39,29 @@ export default function LoginScreen({
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
+    setServerError('');
     setTouched({
       email: true,
       password: true,
     });
 
-    if (!emailError && !passwordError) {
+    if (emailError || passwordError) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await loginUser({ email, password });
       onLoginSuccess?.();
+    } catch (error) {
+      setServerError(
+        getApiErrorMessage(error, 'No pudimos iniciar sesion con esos datos.')
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -83,8 +101,10 @@ export default function LoginScreen({
           </Pressable>
         </View>
 
-        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-          Enviar
+        {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+
+        <PrimaryButton disabled={!isFormValid || isSubmitting} onPress={handleSubmit}>
+          {isSubmitting ? 'Ingresando' : 'Enviar'}
         </PrimaryButton>
 
         <View style={styles.registerRow}>
@@ -144,5 +164,14 @@ const styles = StyleSheet.create({
     color: colors.textBurgundy,
     fontFamily: fonts.regular,
     fontSize: 16,
+  },
+  serverError: {
+    alignSelf: 'flex-start',
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+    marginTop: -22,
   },
 });

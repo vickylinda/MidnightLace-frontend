@@ -7,6 +7,9 @@ import AuthTextField from '../components/forms/AuthTextField';
 import DniUploadButton from '../components/forms/DniUploadButton';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import SignUpProgress from '../components/signup/SignUpProgress';
+import { findCountryIdByName } from '../api/countries';
+import { getApiErrorMessage } from '../api/http';
+import { registerUser } from '../api/auth';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import { validateEmail, validateUsername } from '../utils/authValidation';
@@ -29,6 +32,7 @@ const REQUIRED_FIELD_NAMES = [
   'lastName',
   'username',
   'email',
+  'documentNumber',
   'dni',
   'country',
   'province',
@@ -72,9 +76,12 @@ export default function SignUpScreen({ onSubmitSuccess }) {
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [documentNumber, setDocumentNumber] = useState('');
   const [dniFiles, setDniFiles] = useState([]);
   const [address, setAddress] = useState(INITIAL_ADDRESS);
   const [submitted, setSubmitted] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [touched, setTouched] = useState(
     REQUIRED_FIELD_NAMES.reduce(
       (fields, field) => ({
@@ -92,6 +99,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         ? ''
         : 'Subí una foto o archivo del frente y otra del dorso.',
     email: validateEmail(email),
+    documentNumber: requiredError(documentNumber, 'tu documento'),
     firstName: requiredError(firstName, 'tu nombre'),
     lastName: requiredError(lastName, 'tu apellido'),
     locality: requiredError(address.locality, 'la localidad'),
@@ -146,8 +154,9 @@ export default function SignUpScreen({ onSubmitSuccess }) {
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
+    setServerError('');
     setTouched(
       REQUIRED_FIELD_NAMES.reduce(
         (fields, field) => ({
@@ -158,8 +167,36 @@ export default function SignUpScreen({ onSubmitSuccess }) {
       )
     );
 
-    if (isFormValid) {
+    if (!isFormValid) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const countryId = await findCountryIdByName(address.country);
+
+      if (!countryId) {
+        throw new Error('No pudimos encontrar el pais seleccionado.');
+      }
+
+      await registerUser({
+        address,
+        countryId,
+        dniFiles,
+        documentNumber,
+        email,
+        firstName,
+        lastName,
+        username,
+      });
       onSubmitSuccess?.();
+    } catch (error) {
+      setServerError(
+        getApiErrorMessage(error, 'No pudimos enviar el registro.')
+      );
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -209,6 +246,20 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         onChangeText={setEmail}
         textContentType="emailAddress"
         value={email}
+      />
+
+      <AuthTextField
+        error={getVisibleError(
+          touched,
+          submitted,
+          'documentNumber',
+          errors.documentNumber
+        )}
+        keyboardType="number-pad"
+        label="Documento*"
+        onBlur={() => handleBlur('documentNumber')}
+        onChangeText={setDocumentNumber}
+        value={documentNumber}
       />
 
       <View style={styles.section}>
@@ -300,8 +351,9 @@ export default function SignUpScreen({ onSubmitSuccess }) {
       </View>
 
       <View style={styles.submit}>
-        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-          Enviar
+        {serverError ? <Text style={styles.serverError}>{serverError}</Text> : null}
+        <PrimaryButton disabled={!isFormValid || isSubmitting} onPress={handleSubmit}>
+          {isSubmitting ? 'Enviando' : 'Enviar'}
         </PrimaryButton>
       </View>
     </View>
@@ -368,5 +420,13 @@ const styles = StyleSheet.create({
   submit: {
     alignItems: 'center',
     marginTop: 20,
+  },
+  serverError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+    textAlign: 'center',
   },
 });
