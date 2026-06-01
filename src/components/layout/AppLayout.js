@@ -21,6 +21,7 @@ const BOTTOM_NAV_MIN_BOTTOM_PADDING = 5;
 export default function AppLayout({
   activeNavItem = 'inicio',
   children,
+  floatingAction,
   onBackPress,
   onNavItemPress,
   enableSwipeBack = true,
@@ -133,6 +134,21 @@ export default function AppLayout({
             onItemPress={onNavItemPress}
           />
         ) : null}
+
+        {floatingAction ? (
+          <View
+            pointerEvents="box-none"
+            style={[
+              styles.floatingAction,
+              {
+                bottom: bottomInset + 18,
+                right: 18,
+              },
+            ]}
+          >
+            {floatingAction}
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -178,5 +194,9 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '180deg' }],
     width: '100%',
     zIndex: 12,
+  },
+  floatingAction: {
+    position: 'absolute',
+    zIndex: 14,
   },
 });
