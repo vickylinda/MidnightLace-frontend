@@ -8,7 +8,11 @@ import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import { validateEmail, validatePassword } from '../utils/authValidation';
 
-export default function LoginScreen({ onLoginSuccess, onRegisterPress }) {
+export default function LoginScreen({
+  onForgotPasswordPress,
+  onLoginSuccess,
+  onRegisterPress,
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -74,7 +78,7 @@ export default function LoginScreen({ onLoginSuccess, onRegisterPress }) {
             checked={rememberMe}
             onPress={setRememberMe}
           />
-          <Pressable style={styles.forgotLink}>
+          <Pressable onPress={onForgotPasswordPress} style={styles.forgotLink}>
             <Text style={styles.link}>¿Olvidaste tu contraseña?</Text>
           </Pressable>
         </View>

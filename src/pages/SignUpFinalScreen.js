@@ -2,41 +2,15 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import AuthTextField from '../components/forms/AuthTextField';
-import PasswordChecklist, {
-  passwordRules,
-} from '../components/forms/PasswordChecklist';
+import PasswordChecklist from '../components/forms/PasswordChecklist';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import SignUpProgress from '../components/signup/SignUpProgress';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
-
-function validateFinalPassword(password) {
-  if (!password) {
-    return 'Ingresa una contraseña.';
-  }
-
-  const missingRules = passwordRules
-    .filter((rule) => !rule.test(password))
-    .map((rule) => rule.label);
-
-  if (missingRules.length) {
-    return `La clave debe incluir ${missingRules.join(', ')}.`;
-  }
-
-  return '';
-}
-
-function validateConfirmation(password, confirmation) {
-  if (!confirmation) {
-    return 'Confirma tu contraseña.';
-  }
-
-  if (password !== confirmation) {
-    return 'Las contraseñas no coinciden.';
-  }
-
-  return '';
-}
+import {
+  validateNewPassword,
+  validatePasswordConfirmation,
+} from '../utils/authValidation';
 
 export default function SignUpFinalScreen({ onSubmitSuccess }) {
   const [password, setPassword] = useState('');
@@ -47,8 +21,8 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
     password: false,
   });
 
-  const passwordError = validateFinalPassword(password);
-  const confirmationError = validateConfirmation(password, confirmation);
+  const passwordError = validateNewPassword(password);
+  const confirmationError = validatePasswordConfirmation(password, confirmation);
   const isFormValid = !passwordError && !confirmationError;
   const visiblePasswordError =
     (touched.password || submitted) && !password ? passwordError : '';

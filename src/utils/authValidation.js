@@ -32,6 +32,35 @@ export function validatePassword(value) {
   return '';
 }
 
+export function validateNewPassword(value) {
+  if (!value) {
+    return 'Ingresa una contraseña.';
+  }
+
+  const hasMinLength = value.length >= 8;
+  const hasUppercase = /[A-Z]/.test(value);
+  const hasLowercase = /[a-z]/.test(value);
+  const hasNumber = /\d/.test(value);
+
+  if (!hasMinLength || !hasUppercase || !hasLowercase || !hasNumber) {
+    return 'La contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número.';
+  }
+
+  return '';
+}
+
+export function validatePasswordConfirmation(password, confirmation) {
+  if (!confirmation) {
+    return 'Confirma tu contraseña.';
+  }
+
+  if (password !== confirmation) {
+    return 'Las contraseñas no coinciden.';
+  }
+
+  return '';
+}
+
 export function validateUsername(value) {
   const username = value.trim();
 

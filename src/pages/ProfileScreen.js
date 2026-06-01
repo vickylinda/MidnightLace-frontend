@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -295,24 +296,40 @@ function SectionCard({ children, headerAction, title }) {
 }
 
 function ProfileModal({ children, onClose, title, visible }) {
+  const keyboardBehavior =
+    Platform.OS === 'ios'
+      ? 'padding'
+      : Platform.OS === 'android'
+      ? 'height'
+      : undefined;
+
   return (
     <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <IconButton accessibilityLabel="Cerrar modal" onPress={onClose}>
-              <CloseIcon />
-            </IconButton>
+        <KeyboardAvoidingView
+          behavior={keyboardBehavior}
+          keyboardVerticalOffset={0}
+          style={styles.modalKeyboardAvoider}
+        >
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <IconButton accessibilityLabel="Cerrar modal" onPress={onClose}>
+                <CloseIcon />
+              </IconButton>
+            </View>
+            <ScrollView
+              automaticallyAdjustKeyboardInsets
+              bounces={false}
+              contentContainerStyle={styles.modalContent}
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
           </View>
-          <ScrollView
-            bounces={false}
-            contentContainerStyle={styles.modalContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {children}
-          </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -1106,6 +1123,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 42,
+  },
+  modalKeyboardAvoider: {
+    maxWidth: 520,
+    width: '100%',
   },
   modalCard: {
     ...modalShadowStyle,
