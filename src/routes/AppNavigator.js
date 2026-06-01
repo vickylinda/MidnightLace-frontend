@@ -5,12 +5,14 @@ import { Platform } from 'react-native';
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
+import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
 import HomeScreen from '../pages/HomeScreen';
 import LoginScreen from '../pages/LoginScreen';
 import MyActivityScreen from '../pages/MyActivityScreen';
 import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
 import PenaltyPaymentScreen from '../pages/PenaltyPaymentScreen';
 import ProfileScreen from '../pages/ProfileScreen';
+import ResetPasswordScreen from '../pages/ResetPasswordScreen';
 import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
 import SignUpFinalScreen from '../pages/SignUpFinalScreen';
 import SignUpScreen from '../pages/SignUpScreen';
@@ -18,11 +20,13 @@ import SplashScreen from '../pages/SplashScreen';
 
 const ROUTES = {
   auctions: 'auctions',
+  forgotPassword: 'forgotPassword',
   home: 'home',
   login: 'login',
   myActivity: 'myActivity',
   penaltyPayment: 'penaltyPayment',
   profile: 'profile',
+  resetPassword: 'resetPassword',
   signUp: 'signUp',
   signUpAuthorizing: 'signUpAuthorizing',
   signUpFinal: 'signUpFinal',
@@ -32,11 +36,13 @@ const ROUTES = {
 
 const ROUTE_PATHS = {
   [ROUTES.auctions]: '/auctions',
+  [ROUTES.forgotPassword]: '/forgot-password',
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
   [ROUTES.myActivity]: '/my-activity',
   [ROUTES.penaltyPayment]: '/penalty-payment',
   [ROUTES.profile]: '/profile',
+  [ROUTES.resetPassword]: '/reset-password',
   [ROUTES.signUp]: '/sign-up',
   [ROUTES.signUpAuthorizing]: '/sign-up-authorizing',
   [ROUTES.signUpFinal]: '/sign-up-final',
@@ -147,6 +153,14 @@ export default function AppNavigator() {
   }
 
   function getFallbackBackRoute(route) {
+    if (route === ROUTES.forgotPassword) {
+      return ROUTES.login;
+    }
+
+    if (route === ROUTES.resetPassword) {
+      return ROUTES.forgotPassword;
+    }
+
     if (route === ROUTES.signUp) {
       return ROUTES.login;
     }
@@ -218,6 +232,8 @@ export default function AppNavigator() {
 
   const layoutVariant =
     currentRoute === ROUTES.login ||
+    currentRoute === ROUTES.forgotPassword ||
+    currentRoute === ROUTES.resetPassword ||
     currentRoute === ROUTES.signUp ||
     currentRoute === ROUTES.signUpAuthorizing ||
     currentRoute === ROUTES.signUpFinal ||
@@ -265,6 +281,14 @@ export default function AppNavigator() {
         <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => navigateTo(ROUTES.login)} />
+      ) : currentRoute === ROUTES.forgotPassword ? (
+        <ForgotPasswordScreen
+          onResetLinkPress={() => navigateTo(ROUTES.resetPassword)}
+        />
+      ) : currentRoute === ROUTES.resetPassword ? (
+        <ResetPasswordScreen
+          onFinish={() => navigateTo(ROUTES.login, { replace: true })}
+        />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
         <SignUpAuthorizingScreen
           onAuthorized={() => navigateTo(ROUTES.signUpFinal)}
@@ -281,6 +305,7 @@ export default function AppNavigator() {
         />
       ) : (
         <LoginScreen
+          onForgotPasswordPress={() => navigateTo(ROUTES.forgotPassword)}
           onLoginSuccess={() => navigateTo(ROUTES.home)}
           onRegisterPress={() => navigateTo(ROUTES.signUp)}
         />
