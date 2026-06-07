@@ -3,14 +3,19 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 
-export default function PrimaryButton({ children, disabled = false, onPress }) {
+export default function PrimaryButton({
+  children,
+  disabled = false,
+  onPress,
+  style,
+}) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.button, disabled ? styles.buttonDisabled : null]}
+      style={[styles.button, style, disabled ? styles.buttonDisabled : null]}
     >
       <Text style={[styles.label, disabled ? styles.labelDisabled : null]}>
         {children}

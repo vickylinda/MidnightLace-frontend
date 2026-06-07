@@ -159,7 +159,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
     );
 
     if (isFormValid) {
-      onSubmitSuccess?.();
+      onSubmitSuccess?.({ email });
     }
   }
 

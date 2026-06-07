@@ -5,47 +5,56 @@ import { Platform } from 'react-native';
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
+import CreateProductScreen from '../pages/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
 import HomeScreen from '../pages/HomeScreen';
 import LoginScreen from '../pages/LoginScreen';
 import MyActivityScreen from '../pages/MyActivityScreen';
 import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
 import PenaltyPaymentScreen from '../pages/PenaltyPaymentScreen';
+import ProductCatalogScreen from '../pages/ProductCatalogScreen';
 import ProfileScreen from '../pages/ProfileScreen';
 import ResetPasswordScreen from '../pages/ResetPasswordScreen';
 import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
 import SignUpFinalScreen from '../pages/SignUpFinalScreen';
 import SignUpScreen from '../pages/SignUpScreen';
+import SignUpVerificationScreen from '../pages/SignUpVerificationScreen';
 import SplashScreen from '../pages/SplashScreen';
 
 const ROUTES = {
   auctions: 'auctions',
+  createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
   home: 'home',
   login: 'login',
   myActivity: 'myActivity',
   penaltyPayment: 'penaltyPayment',
+  productCatalog: 'productCatalog',
   profile: 'profile',
   resetPassword: 'resetPassword',
   signUp: 'signUp',
   signUpAuthorizing: 'signUpAuthorizing',
   signUpFinal: 'signUpFinal',
+  signUpVerification: 'signUpVerification',
   paymentMethods: 'paymentMethods',
   splash: 'splash',
 };
 
 const ROUTE_PATHS = {
   [ROUTES.auctions]: '/auctions',
+  [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
   [ROUTES.myActivity]: '/my-activity',
   [ROUTES.penaltyPayment]: '/penalty-payment',
+  [ROUTES.productCatalog]: '/products',
   [ROUTES.profile]: '/profile',
   [ROUTES.resetPassword]: '/reset-password',
   [ROUTES.signUp]: '/sign-up',
   [ROUTES.signUpAuthorizing]: '/sign-up-authorizing',
   [ROUTES.signUpFinal]: '/sign-up-final',
+  [ROUTES.signUpVerification]: '/sign-up-verification',
   [ROUTES.paymentMethods]: '/payment-methods',
   [ROUTES.splash]: '/splash',
 };
@@ -93,6 +102,7 @@ export default function AppNavigator() {
     () => getCurrentRouteInfo().route
   );
   const [routeHistory, setRouteHistory] = useState([]);
+  const [registrationEmail, setRegistrationEmail] = useState('');
 
   // Always show the splash screen briefly on startup across platforms.
   const [isLoading, setIsLoading] = useState(true);
@@ -170,6 +180,10 @@ export default function AppNavigator() {
     }
 
     if (route === ROUTES.signUpFinal) {
+      return ROUTES.signUpVerification;
+    }
+
+    if (route === ROUTES.signUpVerification) {
       return ROUTES.signUpAuthorizing;
     }
 
@@ -181,8 +195,13 @@ export default function AppNavigator() {
       return ROUTES.myActivity;
     }
 
+    if (route === ROUTES.createProduct) {
+      return ROUTES.auctions;
+    }
+
     if (
       route === ROUTES.auctions ||
+      route === ROUTES.productCatalog ||
       route === ROUTES.profile ||
       route === ROUTES.myActivity
     ) {
@@ -224,6 +243,10 @@ export default function AppNavigator() {
     if (itemId === 'actividad') {
       navigateTo(ROUTES.myActivity);
     }
+
+    if (itemId === 'catalogo') {
+      navigateTo(ROUTES.productCatalog);
+    }
   }
 
   if (isLoading || !fontsLoaded || currentRoute === ROUTES.splash) {
@@ -236,6 +259,7 @@ export default function AppNavigator() {
     currentRoute === ROUTES.resetPassword ||
     currentRoute === ROUTES.signUp ||
     currentRoute === ROUTES.signUpAuthorizing ||
+    currentRoute === ROUTES.signUpVerification ||
     currentRoute === ROUTES.signUpFinal ||
     currentRoute === ROUTES.paymentMethods
       ? 'auth'
@@ -252,6 +276,10 @@ export default function AppNavigator() {
       activeNavItem={
         currentRoute === ROUTES.auctions
           ? 'subastas'
+          : currentRoute === ROUTES.createProduct
+          ? 'subastas'
+          : currentRoute === ROUTES.productCatalog
+          ? 'catalogo'
           : currentRoute === ROUTES.home
           ? 'inicio'
           : currentRoute === ROUTES.profile
@@ -263,7 +291,11 @@ export default function AppNavigator() {
       }
       enableSwipeBack={canNavigateBack}
       floatingAction={
-        currentRoute === ROUTES.auctions ? <AuctionSpeedDial /> : null
+        currentRoute === ROUTES.auctions ? (
+          <AuctionSpeedDial
+            onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+          />
+        ) : null
       }
       onBackPress={canNavigateBack ? handleBackPress : undefined}
       onNavItemPress={handleNavItemPress}
@@ -273,6 +305,12 @@ export default function AppNavigator() {
     >
       {currentRoute === ROUTES.auctions ? (
         <AllAuctionsScreen />
+      ) : currentRoute === ROUTES.createProduct ? (
+        <CreateProductScreen
+          onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
+        />
+      ) : currentRoute === ROUTES.productCatalog ? (
+        <ProductCatalogScreen />
       ) : currentRoute === ROUTES.home ? (
         <HomeScreen onViewAllAuctions={() => navigateTo(ROUTES.auctions)} />
       ) : currentRoute === ROUTES.myActivity ? (
@@ -291,7 +329,12 @@ export default function AppNavigator() {
         />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
         <SignUpAuthorizingScreen
-          onAuthorized={() => navigateTo(ROUTES.signUpFinal)}
+          onAuthorized={() => navigateTo(ROUTES.signUpVerification)}
+        />
+      ) : currentRoute === ROUTES.signUpVerification ? (
+        <SignUpVerificationScreen
+          email={registrationEmail}
+          onVerified={() => navigateTo(ROUTES.signUpFinal)}
         />
       ) : currentRoute === ROUTES.signUpFinal ? (
         <SignUpFinalScreen
@@ -301,7 +344,10 @@ export default function AppNavigator() {
         <PaymentMethodsScreen onContinue={() => navigateTo(ROUTES.home)} />
       ) : currentRoute === ROUTES.signUp ? (
         <SignUpScreen
-          onSubmitSuccess={() => navigateTo(ROUTES.signUpAuthorizing)}
+          onSubmitSuccess={({ email }) => {
+            setRegistrationEmail(email);
+            navigateTo(ROUTES.signUpAuthorizing);
+          }}
         />
       ) : (
         <LoginScreen
