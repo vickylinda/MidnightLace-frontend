@@ -12,6 +12,7 @@
     "@expo-google-fonts/great-vibes": "^0.4.1",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/playfair-display": "^0.4.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@rn-primitives/checkbox": "^1.4.0",
     "@rn-primitives/progress": "^1.4.0",
     "credit-card-type": "^10.1.2",

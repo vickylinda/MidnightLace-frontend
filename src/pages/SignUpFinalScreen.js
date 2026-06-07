@@ -11,8 +11,10 @@ import {
   validateNewPassword,
   validatePasswordConfirmation,
 } from '../utils/authValidation';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
+import { setSession } from '../utils/session';
 
-export default function SignUpFinalScreen({ onSubmitSuccess }) {
+export default function SignUpFinalScreen({ code, email, onSubmitSuccess }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -20,6 +22,8 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
     confirmation: false,
     password: false,
   });
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
 
   const passwordError = validateNewPassword(password);
   const confirmationError = validatePasswordConfirmation(password, confirmation);
@@ -36,15 +40,31 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
-    setTouched({
-      confirmation: true,
-      password: true,
-    });
+    setTouched({ confirmation: true, password: true });
+    setApiError('');
 
-    if (isFormValid) {
+    if (!isFormValid) return;
+
+    setLoading(true);
+    try {
+      const session = await apiFetch('/v1/auth/confirmar', {
+        method: 'POST',
+        body: { codigo: code, clave: password, tipo: 'registro' },
+        auth: false,
+      });
+      setSession(session);
       onSubmitSuccess?.();
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'No pudimos confirmar el registro.');
+      setApiError(
+        error?.status === 400
+          ? 'El código es incorrecto o expiró. Volvé al paso anterior para reenviarlo.'
+          : msg
+      );
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -76,9 +96,13 @@ export default function SignUpFinalScreen({ onSubmitSuccess }) {
         value={confirmation}
       />
 
+      {apiError ? (
+        <Text style={styles.apiError}>{apiError}</Text>
+      ) : null}
+
       <View style={styles.submit}>
-        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-          Enviar
+        <PrimaryButton disabled={!isFormValid || loading} onPress={handleSubmit}>
+          {loading ? 'Confirmando...' : 'Enviar'}
         </PrimaryButton>
       </View>
     </View>
@@ -109,6 +133,14 @@ const styles = StyleSheet.create({
   },
   passwordField: {
     marginBottom: 11,
+  },
+  apiError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   submit: {
     alignItems: 'center',

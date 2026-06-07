@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { Platform } from 'react-native';
 
+import { loadSession } from '../utils/session';
+
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
@@ -103,8 +105,8 @@ export default function AppNavigator() {
   );
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
 
-  // Always show the splash screen briefly on startup across platforms.
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({
     GreatVibes_400Regular: require('@expo-google-fonts/great-vibes/400Regular/GreatVibes_400Regular.ttf'),
@@ -116,14 +118,29 @@ export default function AppNavigator() {
   });
 
   useEffect(() => {
-    const splashTimer = setTimeout(() => {
-      // Hide splash and, if we were still on the `splash` route (native),
-      // navigate to the login route so the app continues startup.
-      setIsLoading(false);
-      setCurrentRoute((prev) => (prev === ROUTES.splash ? ROUTES.login : prev));
-    }, 1800);
+    let cancelled = false;
 
-    return () => clearTimeout(splashTimer);
+    async function init() {
+      await Promise.all([
+        new Promise((resolve) => setTimeout(resolve, 1800)),
+        loadSession(),
+      ]);
+
+      if (cancelled) return;
+
+      const { getSession } = await import('../utils/session');
+      const session = getSession();
+
+      setIsLoading(false);
+      setCurrentRoute((prev) =>
+        prev === ROUTES.splash
+          ? session ? ROUTES.home : ROUTES.login
+          : prev
+      );
+    }
+
+    init();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -318,7 +335,10 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.penaltyPayment ? (
         <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
-        <ProfileScreen onLogout={() => navigateTo(ROUTES.login)} />
+        <ProfileScreen onLogout={() => {
+          import('../utils/session').then(({ clearSession }) => clearSession());
+          navigateTo(ROUTES.login, { replace: true });
+        }} />
       ) : currentRoute === ROUTES.forgotPassword ? (
         <ForgotPasswordScreen
           onResetLinkPress={() => navigateTo(ROUTES.resetPassword)}
@@ -334,10 +354,15 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.signUpVerification ? (
         <SignUpVerificationScreen
           email={registrationEmail}
-          onVerified={() => navigateTo(ROUTES.signUpFinal)}
+          onVerified={({ code }) => {
+            setVerificationCode(code);
+            navigateTo(ROUTES.signUpFinal);
+          }}
         />
       ) : currentRoute === ROUTES.signUpFinal ? (
         <SignUpFinalScreen
+          code={verificationCode}
+          email={registrationEmail}
           onSubmitSuccess={() => navigateTo(ROUTES.paymentMethods)}
         />
       ) : currentRoute === ROUTES.paymentMethods ? (

@@ -1,61 +1,59 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import ProductStatusCard from '../components/products/ProductStatusCard';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
+import { resolveApiAssetUrl } from '../utils/config';
 
-const PRODUCTS = [
-  {
-    description: 'En proceso de verificación por la empresa.',
-    imageSource: require('../assets/products/cottage-grape.png'),
-    owner: 'forestlace',
+const STATUS_MAP = {
+  pendiente: { status: 'pending', statusLabel: 'pendiente' },
+  asignado: { status: 'assigned', statusLabel: 'asignado' },
+  pendiente_confirmacion: { status: 'confirming', statusLabel: 'a confirmar' },
+  en_subasta: { status: 'auction', statusLabel: 'en subasta' },
+  rechazado: { status: 'rejected', statusLabel: 'rechazado' },
+  vendido: { status: 'sold', statusLabel: 'vendido' },
+};
+
+function mapProduct(producto) {
+  const mapped = STATUS_MAP[producto.estadoProducto] ?? {
     status: 'pending',
-    statusLabel: 'pendiente',
-    title: 'Vestido Cottage Grape Lolita',
-  },
-  {
-    description: 'Asignado a catálogo con precio definido. Esperando tu confirmación.',
-    imageSource: require('../assets/products/soft-fur.jpg'),
-    owner: 'laceatelier',
-    status: 'confirming',
-    statusLabel: 'a confirmar',
-    title: 'Campera Soft Fur Pink',
-  },
-  {
-    description: 'Aprobado y asignado a una futura subasta.',
-    imageSource: require('../assets/products/layered-star.jpg'),
-    owner: 'velvetnoir',
-    status: 'assigned',
-    statusLabel: 'asignado',
-    title: 'Falda Layered Star Punk Skirt',
-  },
-  {
-    description: 'Actualmente disponible para pujas.',
-    imageSource: require('../assets/products/kawaii-sky.jpg'),
-    owner: 'moonangel',
-    status: 'auction',
-    statusLabel: 'en subasta',
-    title: 'Hoodie Kawaii Sky Blue Oversize',
-  },
-  {
-    description: 'No cumple con los criterios de aceptación.',
-    imageSource: require('../assets/products/grunge-stripe.jpg'),
-    owner: 'noirgrunge',
-    status: 'rejected',
-    statusLabel: 'rechazado',
-    title: 'Top Grunge Stripe Gothic Tee',
-  },
-  {
-    description: 'Subastado y vendido exitosamente.',
-    imageSource: require('../assets/products/sweet-bow.jpg'),
-    owner: 'pastelatelier',
-    status: 'sold',
-    statusLabel: 'vendido',
-    title: 'Zapatos Sweet Bow Mary Jane',
-  },
-];
+    statusLabel: producto.estadoProducto,
+  };
+  const primeraFoto = producto.fotos?.[0]?.foto;
+  return {
+    description: producto.descripcionCompleta,
+    imageSource: primeraFoto ? { uri: resolveApiAssetUrl(primeraFoto) } : null,
+    key: String(producto.identificador),
+    status: mapped.status,
+    statusLabel: mapped.statusLabel,
+    title: producto.descripcionCompleta.split('\n')[0].slice(0, 60),
+  };
+}
 
 export default function ProductCatalogScreen() {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchProducts = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await apiFetch('/v1/productos?cantidad=50');
+      setProducts((data.datos ?? []).map(mapProduct));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No pudimos cargar tus productos.'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Estado de los productos</Text>
@@ -63,11 +61,19 @@ export default function ProductCatalogScreen() {
         Seguí el proceso de evaluación y asignación de los bienes que publicaste.
       </Text>
 
-      <View style={styles.list}>
-        {PRODUCTS.map((product) => (
-          <ProductStatusCard key={product.title} {...product} />
-        ))}
-      </View>
+      {loading ? (
+        <ActivityIndicator color={colors.burgundy} size="large" style={styles.spinner} />
+      ) : error ? (
+        <Text style={styles.error}>{error}</Text>
+      ) : products.length === 0 ? (
+        <Text style={styles.empty}>Todavía no publicaste ningún producto.</Text>
+      ) : (
+        <View style={styles.list}>
+          {products.map((product) => (
+            <ProductStatusCard key={product.key} {...product} />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -102,5 +108,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     rowGap: 16,
     width: '100%',
+  },
+  spinner: {
+    marginTop: 40,
+  },
+  error: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    marginTop: 24,
+    textAlign: 'center',
+  },
+  empty: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    marginTop: 40,
+    textAlign: 'center',
   },
 });

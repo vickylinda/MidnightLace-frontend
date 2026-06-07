@@ -7,23 +7,21 @@ import {
   useClearByFocusCell,
 } from 'react-native-confirmation-code-field';
 
+import PrimaryButton from '../components/forms/PrimaryButton';
 import SignUpProgress from '../components/signup/SignUpProgress';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
 
 const CELL_COUNT = 6;
-const MOCK_CODE = '482731';
-const RESEND_SECONDS = 30;
+const RESEND_SECONDS = 60;
 
-export default function SignUpVerificationScreen({
-  email,
-  onVerified,
-}) {
+export default function SignUpVerificationScreen({ email, onVerified }) {
   const [value, setValue] = useState('');
   const [error, setError] = useState('');
   const [remainingSeconds, setRemainingSeconds] = useState(RESEND_SECONDS);
   const [message, setMessage] = useState('');
-  const hasVerifiedRef = useRef(false);
+  const [resending, setResending] = useState(false);
   const ref = useBlurOnFulfill({ cellCount: CELL_COUNT, value });
   const [codeFieldProps, getCellOnLayoutHandler] = useClearByFocusCell({
     setValue,
@@ -31,34 +29,13 @@ export default function SignUpVerificationScreen({
   });
 
   useEffect(() => {
-    if (remainingSeconds <= 0) {
-      return undefined;
-    }
-
-    const timer = setTimeout(() => {
-      setRemainingSeconds((seconds) => Math.max(seconds - 1, 0));
-    }, 1000);
-
+    if (remainingSeconds <= 0) return undefined;
+    const timer = setTimeout(
+      () => setRemainingSeconds((s) => Math.max(s - 1, 0)),
+      1000
+    );
     return () => clearTimeout(timer);
   }, [remainingSeconds]);
-
-  useEffect(() => {
-    if (value.length !== CELL_COUNT || hasVerifiedRef.current) {
-      return undefined;
-    }
-
-    if (value !== MOCK_CODE) {
-      setError('El código ingresado no es correcto.');
-      return undefined;
-    }
-
-    hasVerifiedRef.current = true;
-    setError('');
-    setMessage('Correo verificado. Continuando...');
-    const timer = setTimeout(() => onVerified?.(), 550);
-
-    return () => clearTimeout(timer);
-  }, [onVerified, value]);
 
   function handleChange(nextValue) {
     setValue(nextValue.replace(/\D/g, '').slice(0, CELL_COUNT));
@@ -66,16 +43,33 @@ export default function SignUpVerificationScreen({
     setMessage('');
   }
 
-  function handleResend() {
-    if (remainingSeconds > 0) {
+  function handleContinue() {
+    if (value.length !== CELL_COUNT) {
+      setError('Ingresá el código de 6 dígitos.');
       return;
     }
+    onVerified?.({ code: value });
+  }
 
-    hasVerifiedRef.current = false;
-    setValue('');
+  async function handleResend() {
+    if (remainingSeconds > 0 || resending) return;
+    setResending(true);
     setError('');
-    setMessage('Te enviamos un código nuevo.');
-    setRemainingSeconds(RESEND_SECONDS);
+    setMessage('');
+    try {
+      await apiFetch('/v1/auth/reenviar-codigo', {
+        method: 'POST',
+        body: { email, tipo: 'registro' },
+        auth: false,
+      });
+      setValue('');
+      setMessage('Te enviamos un código nuevo.');
+      setRemainingSeconds(RESEND_SECONDS);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No pudimos reenviar el código.'));
+    } finally {
+      setResending(false);
+    }
   }
 
   return (
@@ -116,9 +110,14 @@ export default function SignUpVerificationScreen({
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {message ? <Text style={styles.success}>{message}</Text> : null}
 
-      <Text style={styles.mockHint}>
-        Para probar este flujo, usá el código <Text style={styles.mockCode}>{MOCK_CODE}</Text>.
-      </Text>
+      <View style={styles.continueButton}>
+        <PrimaryButton
+          disabled={value.length !== CELL_COUNT}
+          onPress={handleContinue}
+        >
+          Continuar
+        </PrimaryButton>
+      </View>
 
       <Pressable
         accessibilityRole="button"
@@ -209,22 +208,9 @@ const styles = StyleSheet.create({
     marginTop: 13,
     textAlign: 'center',
   },
-  mockHint: {
-    backgroundColor: 'rgba(242, 211, 200, 0.52)',
-    borderColor: 'rgba(159, 2, 29, 0.18)',
-    borderRadius: 6,
-    borderWidth: 1,
-    color: colors.mutedRose,
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    lineHeight: 19,
+  continueButton: {
     marginTop: 28,
-    padding: 12,
-    textAlign: 'center',
-  },
-  mockCode: {
-    color: colors.textBurgundy,
-    fontFamily: fonts.bold,
+    width: '100%',
   },
   resendButton: {
     alignItems: 'center',
