@@ -111,7 +111,7 @@ export default function SignUpAuthorizingScreen({ onAuthorized }) {
         </Text>
         <Text style={styles.statusText}>
           {phase === 'mailSent'
-            ? 'Te enviamos un mail para que ingreses a la app y completes el registro generando tu clave personal.'
+            ? 'Te enviamos un código por mail para verificar tu casilla y completar el registro.'
             : phase === 'category'
             ? 'Asignamos tu categoría y estamos preparando el mail de acceso.'
             : `Validando tus datos. ${remainingSeconds}s`}
@@ -127,7 +127,7 @@ export default function SignUpAuthorizingScreen({ onAuthorized }) {
 
         <View style={styles.action}>
           <PrimaryButton disabled={!canContinue} onPress={onAuthorized}>
-            Ingresar
+            Verificar correo
           </PrimaryButton>
         </View>
       </View>
