@@ -19,3 +19,9 @@ Para abrir la app en Android:
 ```bash
 npm run android
 ```
+
+Una obra del **Grupo 1**:
+- Abeledo, Federico
+- Ghillino, Rocío Belén
+- Novello, Victoria Abril
+- Romero, Mailén Belén
