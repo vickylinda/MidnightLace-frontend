@@ -82,6 +82,7 @@ function ProfileIcon({ color }) {
 
 export default function BottomNavigation({
   activeItem = 'inicio',
+  isInteractive = true,
   onItemPress,
 }) {
   const insets = useSafeAreaInsets();
@@ -107,9 +108,14 @@ export default function BottomNavigation({
           return (
             <Pressable
               accessibilityRole="button"
+              disabled={!isInteractive}
               key={item.id}
               onPress={() => onItemPress?.(item.id)}
-              style={[styles.item, isActive ? styles.activeItem : null]}
+              style={[
+                styles.item,
+                isActive ? styles.activeItem : null,
+                !isInteractive ? styles.disabledItem : null,
+              ]}
             >
               <Icon color={color} />
 
@@ -157,6 +163,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cream,
     minHeight: 50,
     paddingHorizontal: 6,
+  },
+  disabledItem: {
+    opacity: 0.82,
   },
   label: {
     color: colors.cream,

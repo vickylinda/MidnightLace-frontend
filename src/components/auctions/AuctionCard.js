@@ -1,4 +1,4 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
@@ -9,13 +9,23 @@ export default function AuctionCard({
   dateTime,
   imageSource,
   location,
+  onPress,
   pieces,
   status,
   style,
   title,
 }) {
   return (
-    <View style={[styles.card, style]}>
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.card,
+        style,
+        pressed && onPress ? styles.cardPressed : null,
+      ]}
+    >
       <View style={styles.imageFrame}>
         <Image source={imageSource} resizeMode="contain" style={styles.image} />
       </View>
@@ -30,7 +40,7 @@ export default function AuctionCard({
         </View>
         <StatusBadge label={status} style={styles.status} />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -41,6 +51,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: 11,
     width: '100%',
+  },
+  cardPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.995 }],
   },
   imageFrame: {
     aspectRatio: 1264 / 843,

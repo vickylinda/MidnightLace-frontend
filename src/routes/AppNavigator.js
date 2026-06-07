@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
+import AuctionDetailScreen from '../pages/AuctionDetailScreen';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
 import CreateProductScreen from '../pages/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
@@ -22,6 +23,7 @@ import SignUpVerificationScreen from '../pages/SignUpVerificationScreen';
 import SplashScreen from '../pages/SplashScreen';
 
 const ROUTES = {
+  auctionDetail: 'auctionDetail',
   auctions: 'auctions',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
@@ -41,6 +43,7 @@ const ROUTES = {
 };
 
 const ROUTE_PATHS = {
+  [ROUTES.auctionDetail]: '/subasta',
   [ROUTES.auctions]: '/auctions',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
@@ -103,6 +106,7 @@ export default function AppNavigator() {
   );
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
+  const [selectedAuction, setSelectedAuction] = useState(null);
 
   // Always show the splash screen briefly on startup across platforms.
   const [isLoading, setIsLoading] = useState(true);
@@ -148,6 +152,22 @@ export default function AppNavigator() {
       updateBrowserRoute(currentRoute, true);
     }
   }, [currentRoute, isLoading]);
+
+  useEffect(() => {
+    if (
+      !isLoading &&
+      currentRoute === ROUTES.auctionDetail &&
+      !selectedAuction
+    ) {
+      navigateTo(ROUTES.auctions, { replace: true });
+    }
+  }, [currentRoute, isLoading, selectedAuction]);
+
+  useEffect(() => {
+    if (currentRoute !== ROUTES.auctionDetail && selectedAuction) {
+      setSelectedAuction(null);
+    }
+  }, [currentRoute, selectedAuction]);
 
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
@@ -199,6 +219,10 @@ export default function AppNavigator() {
       return ROUTES.auctions;
     }
 
+    if (route === ROUTES.auctionDetail) {
+      return ROUTES.auctions;
+    }
+
     if (
       route === ROUTES.auctions ||
       route === ROUTES.productCatalog ||
@@ -225,6 +249,11 @@ export default function AppNavigator() {
     );
     setCurrentRoute(previousRoute);
     updateBrowserRoute(previousRoute, true);
+  }
+
+  function handleAuctionPress(auction) {
+    setSelectedAuction(auction);
+    navigateTo(ROUTES.auctionDetail);
   }
 
   function handleNavItemPress(itemId) {
@@ -276,6 +305,8 @@ export default function AppNavigator() {
       activeNavItem={
         currentRoute === ROUTES.auctions
           ? 'subastas'
+          : currentRoute === ROUTES.auctionDetail
+          ? 'subastas'
           : currentRoute === ROUTES.createProduct
           ? 'subastas'
           : currentRoute === ROUTES.productCatalog
@@ -297,14 +328,17 @@ export default function AppNavigator() {
           />
         ) : null
       }
+      isBottomNavigationInteractive={currentRoute !== ROUTES.auctionDetail}
       onBackPress={canNavigateBack ? handleBackPress : undefined}
       onNavItemPress={handleNavItemPress}
       showLogo={currentRoute !== ROUTES.home}
       showNotifications={layoutVariant !== 'auth'}
       variant={layoutVariant}
     >
-      {currentRoute === ROUTES.auctions ? (
-        <AllAuctionsScreen />
+      {currentRoute === ROUTES.auctionDetail ? (
+        selectedAuction ? <AuctionDetailScreen /> : null
+      ) : currentRoute === ROUTES.auctions ? (
+        <AllAuctionsScreen onAuctionPress={handleAuctionPress} />
       ) : currentRoute === ROUTES.createProduct ? (
         <CreateProductScreen
           onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
@@ -312,7 +346,10 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.productCatalog ? (
         <ProductCatalogScreen />
       ) : currentRoute === ROUTES.home ? (
-        <HomeScreen onViewAllAuctions={() => navigateTo(ROUTES.auctions)} />
+        <HomeScreen
+          onAuctionPress={handleAuctionPress}
+          onViewAllAuctions={() => navigateTo(ROUTES.auctions)}
+        />
       ) : currentRoute === ROUTES.myActivity ? (
         <MyActivityScreen onPayPenalty={() => navigateTo(ROUTES.penaltyPayment)} />
       ) : currentRoute === ROUTES.penaltyPayment ? (
