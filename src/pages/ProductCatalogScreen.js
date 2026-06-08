@@ -4,8 +4,8 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import ProductStatusCard from '../components/products/ProductStatusCard';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
-import { apiFetch, getApiErrorMessage } from '../utils/http';
 import { resolveApiAssetUrl } from '../utils/config';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
 
 const STATUS_MAP = {
   pendiente: { status: 'pending', statusLabel: 'pendiente' },
@@ -21,14 +21,19 @@ function mapProduct(producto) {
     status: 'pending',
     statusLabel: producto.estadoProducto,
   };
-  const primeraFoto = producto.fotos?.[0]?.foto;
+  const lines = producto.descripcionCompleta.split('\n');
+  const title = lines[0].slice(0, 60);
+  const description = lines.slice(1).join('\n').trim() || null;
+  const imageSource = producto.fotoPrincipal
+    ? { uri: resolveApiAssetUrl(producto.fotoPrincipal) }
+    : null;
   return {
-    description: producto.descripcionCompleta,
-    imageSource: primeraFoto ? { uri: resolveApiAssetUrl(primeraFoto) } : null,
-    key: String(producto.identificador),
+    description,
+    id: String(producto.identificador),
+    imageSource,
     status: mapped.status,
     statusLabel: mapped.statusLabel,
-    title: producto.descripcionCompleta.split('\n')[0].slice(0, 60),
+    title,
   };
 }
 
@@ -70,7 +75,7 @@ export default function ProductCatalogScreen() {
       ) : (
         <View style={styles.list}>
           {products.map((product) => (
-            <ProductStatusCard key={product.key} {...product} />
+            <ProductStatusCard key={product.id} {...product} />
           ))}
         </View>
       )}

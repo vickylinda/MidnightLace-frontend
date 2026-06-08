@@ -94,7 +94,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
   const [apiError, setApiError] = useState('');
 
   useEffect(() => {
-    apiFetch('/v1/paises?cantidad=200', { auth: false })
+    apiFetch('/v1/paises?cantidad=100', { auth: false })
       .then((data) => setCountries(data.datos ?? []))
       .catch(() => {});
   }, []);

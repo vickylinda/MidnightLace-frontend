@@ -41,12 +41,14 @@ export default function ProductStatusCard({
   return (
     <View style={styles.card}>
       <View style={styles.imageFrame}>
-        <Image resizeMode="contain" source={imageSource} style={styles.image} />
+        {imageSource ? (
+          <Image resizeMode="contain" source={imageSource} style={styles.image} />
+        ) : null}
       </View>
 
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.owner}>Publicado por @{owner}</Text>
+        {owner ? <Text style={styles.owner}>Publicado por @{owner}</Text> : null}
 
         <View style={styles.statusRow}>
           <Text style={styles.statusPrefix}>Estado:</Text>
@@ -55,7 +57,7 @@ export default function ProductStatusCard({
           </View>
         </View>
 
-        <Text style={styles.description}>{description}</Text>
+        {description ? <Text style={styles.description}>{description}</Text> : null}
       </View>
     </View>
   );

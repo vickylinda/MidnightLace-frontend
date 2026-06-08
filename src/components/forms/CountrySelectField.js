@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import {
-  FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -71,13 +71,13 @@ export default function CountrySelectField({
             style={styles.searchInput}
             value={search}
           />
-          <FlatList
-            data={filtered}
+          <ScrollView
             keyboardShouldPersistTaps="handled"
-            keyExtractor={(item) => String(item.numero)}
-            nestedScrollEnabled
-            renderItem={({ item }) => (
+            style={styles.list}
+          >
+            {filtered.map((item) => (
               <Pressable
+                key={String(item.numero)}
                 onPress={() => handleSelect(item)}
                 style={[
                   styles.option,
@@ -86,9 +86,8 @@ export default function CountrySelectField({
               >
                 <Text style={styles.optionText}>{item.nombre}</Text>
               </Pressable>
-            )}
-            style={styles.list}
-          />
+            ))}
+          </ScrollView>
           <Pressable onPress={handleClose} style={styles.closeBtn}>
             <Text style={styles.closeBtnText}>Cancelar</Text>
           </Pressable>
