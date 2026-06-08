@@ -44,7 +44,8 @@ Para instalarlo:
 3. Si Android se pone desconfiado y pregunta si querés permitir instalar apps desde el navegador, aceptá.
 4. Instalá la app y abrila como cualquier aplicación normal.
 
-https://expo.dev/accounts/vickylinda/projects/midnightlace-frontend/builds/a3bd6c44-377c-4644-b319-bfedad901607
+https://raw.githubusercontent.com/vickylinda/MidnightLace-frontend/main/docs/midnight-lace.apk
+
 
 > Por ahora esta opción es solo para Android. iOS decidió ser iOS.
 
