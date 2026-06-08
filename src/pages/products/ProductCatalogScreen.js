@@ -44,11 +44,11 @@ function CloseIcon() {
 }
 
 const STATUS_DETAILS = {
-  pending: 'En proceso de verificacion por la empresa. Te vamos a avisar cuando termine la revision.',
-  confirming: 'Asignado a catalogo con precio definido. Falta que confirmes la asignacion.',
+  pending: 'En proceso de verificación por la empresa.',
+  confirming: 'Asignado a catalogo con precio definido. Esperando su confirmación.',
   assigned: 'Aprobado y asignado a una futura subasta.',
-  auction: 'Actualmente disponible para recibir pujas.',
-  rejected: 'No cumple con los criterios de aceptacion. Podes revisar los datos y volver a solicitar evaluacion.',
+  auction: 'Actualmente disponible para pujas.',
+  rejected: 'No cumple con los criterios de aceptación.',
   sold: 'Subastado y vendido exitosamente.',
 };
 
@@ -169,7 +169,13 @@ function ProductDetailsModal({ product, onClose }) {
   }
 
   const detail = STATUS_DETAILS[product.status] ?? 'Estado registrado por el sistema.';
-  const imageWidth = Math.min(width * 0.78, 330);
+  const statusTitle = product.statusLabel
+    ? product.statusLabel.charAt(0).toUpperCase() + product.statusLabel.slice(1)
+    : 'Estado';
+  const imageWidth = Math.min(width * 0.78, 308);
+  const modalInnerWidth = Math.min(width * 0.9, 390) - 32;
+  const imageGap = 12;
+  const carouselSidePadding = Math.max((modalInnerWidth - imageWidth) / 2, 0);
 
   return (
     <Modal animationType="fade" transparent visible={Boolean(product)} onRequestClose={onClose}>
@@ -190,9 +196,15 @@ function ProductDetailsModal({ product, onClose }) {
           <ScrollView showsVerticalScrollIndicator={false}>
             {product.imageSources.length > 0 ? (
               <ScrollView
+                decelerationRate="fast"
                 horizontal
-                pagingEnabled
+                contentContainerStyle={[
+                  styles.modalCarouselContent,
+                  { paddingHorizontal: carouselSidePadding },
+                ]}
                 showsHorizontalScrollIndicator={false}
+                snapToInterval={imageWidth + imageGap}
+                snapToAlignment="start"
                 style={styles.modalCarousel}
               >
                 {product.imageSources.map((source, index) => (
@@ -227,7 +239,7 @@ function ProductDetailsModal({ product, onClose }) {
             </View>
 
             <View style={styles.modalInfoBox}>
-              <Text style={styles.modalInfoTitle}>Que significa este estado</Text>
+              <Text style={styles.modalInfoTitle}>{statusTitle}</Text>
               <Text style={styles.modalInfoText}>{detail}</Text>
             </View>
 
@@ -235,7 +247,10 @@ function ProductDetailsModal({ product, onClose }) {
               <Text style={styles.modalMeta}>Publicado por @{product.owner}</Text>
             ) : null}
             {product.description ? (
-              <Text style={styles.modalDescription}>{product.description}</Text>
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Descripcion</Text>
+                <Text style={styles.modalDescription}>{product.description}</Text>
+              </View>
             ) : null}
           </ScrollView>
         </View>
@@ -449,6 +464,11 @@ const styles = StyleSheet.create({
   modalCarousel: {
     marginTop: 10,
   },
+  modalCarouselContent: {
+    alignItems: 'center',
+    columnGap: 12,
+    paddingHorizontal: 0,
+  },
   modalCloseButton: {
     alignItems: 'center',
     borderRadius: 999,
@@ -461,7 +481,16 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     lineHeight: 20,
+    marginTop: 4,
+  },
+  modalDescriptionBox: {
     marginTop: 12,
+  },
+  modalDescriptionTitle: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    lineHeight: 19,
   },
   modalHeader: {
     alignItems: 'center',
@@ -505,7 +534,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     height: 250,
     justifyContent: 'center',
-    marginRight: 12,
     overflow: 'hidden',
     width: 310,
   },

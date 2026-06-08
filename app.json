@@ -8,8 +8,8 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/logo.png",
-      "resizeMode": "contain",
+      "image": "./assets/splash-image.png",
+      "resizeMode": "cover",
       "backgroundColor": "#9F021D"
     },
     "ios": {
@@ -19,6 +19,7 @@
       "package": "com.midnightlace.frontend",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
+        "backgroundImage": "./assets/logo.png",
         "backgroundColor": "#9F021D"
       },
       "edgeToEdgeEnabled": true,
@@ -31,6 +32,24 @@
     },
     "plugins": [
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-image.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#9F021D",
+          "android": {
+            "image": "./assets/splash-image.png",
+            "resizeMode": "cover",
+            "backgroundColor": "#9F021D"
+          },
+          "ios": {
+            "image": "./assets/splash-image.png",
+            "resizeMode": "cover",
+            "backgroundColor": "#9F021D"
+          }
+        }
+      ],
       [
         "expo-image-picker",
         {

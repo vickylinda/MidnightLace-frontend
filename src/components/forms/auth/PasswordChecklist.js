@@ -6,7 +6,7 @@ import { fonts } from '../../../theme/fonts';
 
 export const passwordRules = [
   {
-    label: 'Al menos una mayuscula',
+    label: 'Al menos una mayúscula',
     test: (value) => /[A-Z]/.test(value),
   },
   {

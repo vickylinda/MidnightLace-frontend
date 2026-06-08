@@ -21,6 +21,7 @@
     "expo-document-picker": "~14.0.8",
     "expo-font": "~14.0.11",
     "expo-image-picker": "~17.0.11",
+    "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
     "ngrok": "^5.0.0-beta.2",
     "react": "19.1.0",

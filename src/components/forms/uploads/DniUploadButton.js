@@ -285,7 +285,7 @@ export default function DniUploadButton({ error, files, onChange }) {
         <View style={[styles.menu, menuShadowStyle]}>
           <Pressable onPress={openCamera} style={styles.menuItem}>
             <CameraIcon />
-            <Text style={styles.menuText}>Abrir camara</Text>
+            <Text style={styles.menuText}>Abrir cámara</Text>
           </Pressable>
 
           <Pressable onPress={pickFromLibrary} style={styles.menuItem}>
@@ -340,7 +340,7 @@ export default function DniUploadButton({ error, files, onChange }) {
       ) : null}
 
       {!canUploadMore ? (
-        <Text style={styles.limitText}>Ya cargaste el maximo de 2 archivos.</Text>
+        <Text style={styles.limitText}>Ya cargaste el máximo de 2 archivos.</Text>
       ) : null}
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}

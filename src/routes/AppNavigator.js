@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
+import * as ExpoSplashScreen from 'expo-splash-screen';
 import { Platform } from 'react-native';
 
 import { loadSession } from '../utils/session';
@@ -125,6 +126,18 @@ export default function AppNavigator() {
     Inter_700Bold: require('@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf'),
     PlayfairDisplay_700Bold: require('@expo-google-fonts/playfair-display/700Bold/PlayfairDisplay_700Bold.ttf'),
   });
+
+  useEffect(() => {
+    if (!fontsLoaded) {
+      return undefined;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      ExpoSplashScreen.hideAsync().catch(() => {});
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [fontsLoaded]);
 
   useEffect(() => {
     let cancelled = false;

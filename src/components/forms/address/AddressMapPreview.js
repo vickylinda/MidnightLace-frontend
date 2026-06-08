@@ -311,7 +311,7 @@ export default function AddressMapPreview({ address }) {
             <View style={styles.emptyContainer}>
               <Text style={styles.placeholderText}>
                 {lookupError || hasMapError
-                  ? 'No pudimos ubicar esa direccion. Revisa los datos ingresados.'
+                  ? 'No pudimos ubicar esa dirección. Revisá los datos ingresados.'
                   : 'Completá los campos de domicilio o usá el buscador para ver el mapa.'}
               </Text>
             </View>
