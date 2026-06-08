@@ -19,7 +19,6 @@
       "package": "com.midnightlace.frontend",
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
-        "backgroundImage": "./assets/logo.png",
         "backgroundColor": "#9F021D"
       },
       "edgeToEdgeEnabled": true,

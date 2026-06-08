@@ -39,18 +39,12 @@ Si tenés un celular Android, vas a tener la suerte y el privilegio de probar el
 
 Para instalarlo:
 
-1. Escaneá el QR o abrí el link directo desde tu celular.
+1. Abrí el link directo desde tu celular.
 2. Descargá el APK.
 3. Si Android se pone desconfiado y pregunta si querés permitir instalar apps desde el navegador, aceptá.
 4. Instalá la app y abrila como cualquier aplicación normal.
 
-<p align="center">
-  <img src="docs/midnight-lace-apk-qr.png" alt="QR para descargar el APK" width="240" />
-</p>
-
-Link directo:
-
-https://raw.githubusercontent.com/vickylinda/MidnightLace-frontend/main/docs/midnight-lace.apk
+https://expo.dev/accounts/vickylinda/projects/midnightlace-frontend/builds/a3bd6c44-377c-4644-b319-bfedad901607
 
 > Por ahora esta opción es solo para Android. iOS decidió ser iOS.
 
