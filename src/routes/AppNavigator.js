@@ -8,7 +8,7 @@ import { loadSession } from '../utils/session';
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AuctionDetailScreen from '../pages/auctions/AuctionDetailScreen';
-import AuctionProductScreen from '../pages/AuctionProductScreen';
+import AuctionProductScreen from '../pages/auctions/AuctionProductScreen';
 import AllAuctionsScreen from '../pages/auctions/AllAuctionsScreen';
 import CreateProductScreen from '../pages/products/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/auth/ForgotPasswordScreen';
