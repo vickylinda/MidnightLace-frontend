@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import ErrorModal from '../components/feedback/ErrorModal';
 import AuthTextField from '../components/forms/AuthTextField';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import RememberCheckbox from '../components/forms/RememberCheckbox';
@@ -66,6 +67,12 @@ export default function LoginScreen({
 
   return (
     <View style={styles.screen}>
+      <ErrorModal
+        message={apiError}
+        onRetry={() => setApiError('')}
+        visible={Boolean(apiError)}
+      />
+
       <View style={styles.form}>
         <Text style={styles.title}>Iniciar Sesión</Text>
 
@@ -99,10 +106,6 @@ export default function LoginScreen({
             <Text style={styles.link}>¿Olvidaste tu contraseña?</Text>
           </Pressable>
         </View>
-
-        {apiError ? (
-          <Text style={styles.apiError}>{apiError}</Text>
-        ) : null}
 
         <PrimaryButton disabled={!isFormValid || loading} onPress={handleSubmit}>
           {loading ? 'Ingresando...' : 'Enviar'}
@@ -165,12 +168,5 @@ const styles = StyleSheet.create({
     color: colors.textBurgundy,
     fontFamily: fonts.regular,
     fontSize: 16,
-  },
-  apiError: {
-    alignSelf: 'flex-start',
-    color: colors.burgundy,
-    fontFamily: fonts.regular,
-    fontSize: 14,
-    marginBottom: 8,
   },
 });

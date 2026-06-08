@@ -34,6 +34,7 @@
   },
   "private": true,
   "devDependencies": {
+    "qrcode": "^1.5.4",
     "react-native-svg-transformer": "^1.5.3",
     "sharp": "^0.34.5"
   }

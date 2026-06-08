@@ -10,6 +10,7 @@ import AuctionDetailScreen from '../pages/AuctionDetailScreen';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
 import CreateProductScreen from '../pages/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
+import ForgotPasswordVerificationScreen from '../pages/ForgotPasswordVerificationScreen';
 import HomeScreen from '../pages/HomeScreen';
 import LoginScreen from '../pages/LoginScreen';
 import MyActivityScreen from '../pages/MyActivityScreen';
@@ -29,6 +30,7 @@ const ROUTES = {
   auctions: 'auctions',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
+  forgotPasswordVerification: 'forgotPasswordVerification',
   home: 'home',
   login: 'login',
   myActivity: 'myActivity',
@@ -49,6 +51,7 @@ const ROUTE_PATHS = {
   [ROUTES.auctions]: '/auctions',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
+  [ROUTES.forgotPasswordVerification]: '/forgot-password/verification',
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
   [ROUTES.myActivity]: '/my-activity',
@@ -109,6 +112,8 @@ export default function AppNavigator() {
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [selectedAuction, setSelectedAuction] = useState(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -204,8 +209,12 @@ export default function AppNavigator() {
       return ROUTES.login;
     }
 
-    if (route === ROUTES.resetPassword) {
+    if (route === ROUTES.forgotPasswordVerification) {
       return ROUTES.forgotPassword;
+    }
+
+    if (route === ROUTES.resetPassword) {
+      return ROUTES.forgotPasswordVerification;
     }
 
     if (route === ROUTES.signUp) {
@@ -302,6 +311,7 @@ export default function AppNavigator() {
   const layoutVariant =
     currentRoute === ROUTES.login ||
     currentRoute === ROUTES.forgotPassword ||
+    currentRoute === ROUTES.forgotPasswordVerification ||
     currentRoute === ROUTES.resetPassword ||
     currentRoute === ROUTES.signUp ||
     currentRoute === ROUTES.signUpAuthorizing ||
@@ -377,10 +387,24 @@ export default function AppNavigator() {
         }} />
       ) : currentRoute === ROUTES.forgotPassword ? (
         <ForgotPasswordScreen
-          onResetLinkPress={() => navigateTo(ROUTES.resetPassword)}
+          onCodeSent={({ email }) => {
+            setRecoveryEmail(email);
+            setRecoveryCode('');
+            navigateTo(ROUTES.forgotPasswordVerification);
+          }}
+        />
+      ) : currentRoute === ROUTES.forgotPasswordVerification ? (
+        <ForgotPasswordVerificationScreen
+          email={recoveryEmail}
+          onVerified={({ code }) => {
+            setRecoveryCode(code);
+            navigateTo(ROUTES.resetPassword);
+          }}
         />
       ) : currentRoute === ROUTES.resetPassword ? (
         <ResetPasswordScreen
+          code={recoveryCode}
+          email={recoveryEmail}
           onFinish={() => navigateTo(ROUTES.login, { replace: true })}
         />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (

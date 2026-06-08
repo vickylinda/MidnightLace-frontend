@@ -16,11 +16,15 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.midnightlace.frontend",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,9 +35,14 @@
         "expo-image-picker",
         {
           "photosPermission": "Midnight Lace necesita acceder a tus fotos para cargar la imagen del DNI.",
-          "cameraPermission": "Midnight Lace necesita acceder a la cámara para tomar una foto del DNI."
+          "cameraPermission": "Midnight Lace necesita acceder a la cÃ¡mara para tomar una foto del DNI."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8d7f7f28-8ab8-45cc-8234-404776dfd20f"
+      }
+    }
   }
 }

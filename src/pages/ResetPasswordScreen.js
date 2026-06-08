@@ -11,6 +11,7 @@ import {
   validateNewPassword,
   validatePasswordConfirmation,
 } from '../utils/authValidation';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
 
 const REDIRECT_SECONDS = 10;
 
@@ -29,12 +30,14 @@ function SuccessIcon() {
   );
 }
 
-export default function ResetPasswordScreen({ onFinish }) {
+export default function ResetPasswordScreen({ code, email, onFinish }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [countdown, setCountdown] = useState(REDIRECT_SECONDS);
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
   const [touched, setTouched] = useState({
     confirmation: false,
     password: false,
@@ -75,15 +78,35 @@ export default function ResetPasswordScreen({ onFinish }) {
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
     setTouched({
       confirmation: true,
       password: true,
     });
+    setApiError('');
 
-    if (isFormValid) {
+    if (!isFormValid) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await apiFetch('/v1/auth/confirmar', {
+        method: 'POST',
+        body: { codigo: code, clave: password, tipo: 'recuperacion' },
+        auth: false,
+      });
       setIsCompleted(true);
+    } catch (error) {
+      const msg = getApiErrorMessage(error, 'No pudimos actualizar la contraseña.');
+      setApiError(
+        error?.status === 400
+          ? 'El código es incorrecto o expiró. Volvé al paso anterior para reenviarlo.'
+          : msg
+      );
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -106,6 +129,7 @@ export default function ResetPasswordScreen({ onFinish }) {
         onChangeText={(value) => {
           setPassword(value);
           setIsCompleted(false);
+          setApiError('');
         }}
         secureTextEntry
         style={styles.passwordField}
@@ -123,6 +147,7 @@ export default function ResetPasswordScreen({ onFinish }) {
         onChangeText={(value) => {
           setConfirmation(value);
           setIsCompleted(false);
+          setApiError('');
         }}
         secureTextEntry
         textContentType="newPassword"
@@ -141,6 +166,8 @@ export default function ResetPasswordScreen({ onFinish }) {
         </View>
       ) : null}
 
+      {apiError ? <Text style={styles.apiError}>{apiError}</Text> : null}
+
       <View style={styles.submit}>
         {isCompleted ? (
           <Pressable
@@ -151,8 +178,8 @@ export default function ResetPasswordScreen({ onFinish }) {
             <Text style={styles.loginButtonText}>Volver a iniciar sesión</Text>
           </Pressable>
         ) : (
-          <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-            Enviar
+          <PrimaryButton disabled={!isFormValid || loading} onPress={handleSubmit}>
+            {loading ? 'Actualizando...' : 'Enviar'}
           </PrimaryButton>
         )}
       </View>
@@ -218,6 +245,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     lineHeight: 18,
+  },
+  apiError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 8,
+    marginTop: -5,
+    textAlign: 'center',
   },
   submit: {
     alignItems: 'center',
