@@ -296,7 +296,6 @@ export default function AuctionProductScreen() {
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
-    paddingBottom: 12,
     paddingTop: 12,
     zIndex: 2,
   },
@@ -395,7 +394,7 @@ const styles = StyleSheet.create({
     color: palette.green,
     fontFamily: fonts.bold,
     fontSize: 16,
-    lineHeight: 20,
+    lineHeight: 20
   },
   priceDivider: {
     backgroundColor: palette.divider,
