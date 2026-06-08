@@ -1,27 +1,31 @@
 import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
+import * as ExpoSplashScreen from 'expo-splash-screen';
 import { Platform } from 'react-native';
+
+import { loadSession } from '../utils/session';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
-import AuctionDetailScreen from '../pages/AuctionDetailScreen';
+import AuctionDetailScreen from '../pages/auctions/AuctionDetailScreen';
 import AuctionProductScreen from '../pages/AuctionProductScreen';
-import AllAuctionsScreen from '../pages/AllAuctionsScreen';
-import CreateProductScreen from '../pages/CreateProductScreen';
-import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
-import HomeScreen from '../pages/HomeScreen';
-import LoginScreen from '../pages/LoginScreen';
-import MyActivityScreen from '../pages/MyActivityScreen';
-import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
-import PenaltyPaymentScreen from '../pages/PenaltyPaymentScreen';
-import ProductCatalogScreen from '../pages/ProductCatalogScreen';
-import ProfileScreen from '../pages/ProfileScreen';
-import ResetPasswordScreen from '../pages/ResetPasswordScreen';
-import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
-import SignUpFinalScreen from '../pages/SignUpFinalScreen';
-import SignUpScreen from '../pages/SignUpScreen';
-import SignUpVerificationScreen from '../pages/SignUpVerificationScreen';
-import SplashScreen from '../pages/SplashScreen';
+import AllAuctionsScreen from '../pages/auctions/AllAuctionsScreen';
+import CreateProductScreen from '../pages/products/CreateProductScreen';
+import ForgotPasswordScreen from '../pages/auth/ForgotPasswordScreen';
+import ForgotPasswordVerificationScreen from '../pages/auth/ForgotPasswordVerificationScreen';
+import HomeScreen from '../pages/home/HomeScreen';
+import LoginScreen from '../pages/auth/LoginScreen';
+import MyActivityScreen from '../pages/activity/MyActivityScreen';
+import PaymentMethodsScreen from '../pages/signup/PaymentMethodsScreen';
+import PenaltyPaymentScreen from '../pages/activity/PenaltyPaymentScreen';
+import ProductCatalogScreen from '../pages/products/ProductCatalogScreen';
+import ProfileScreen from '../pages/profile/ProfileScreen';
+import ResetPasswordScreen from '../pages/auth/ResetPasswordScreen';
+import SignUpAuthorizingScreen from '../pages/signup/SignUpAuthorizingScreen';
+import SignUpFinalScreen from '../pages/signup/SignUpFinalScreen';
+import SignUpScreen from '../pages/signup/SignUpScreen';
+import SignUpVerificationScreen from '../pages/signup/SignUpVerificationScreen';
+import SplashScreen from '../pages/splash/SplashScreen';
 
 const ROUTES = {
   auctionDetail: 'auctionDetail',
@@ -29,6 +33,7 @@ const ROUTES = {
   auctions: 'auctions',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
+  forgotPasswordVerification: 'forgotPasswordVerification',
   home: 'home',
   login: 'login',
   myActivity: 'myActivity',
@@ -50,6 +55,7 @@ const ROUTE_PATHS = {
   [ROUTES.auctions]: '/auctions',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
+  [ROUTES.forgotPasswordVerification]: '/forgot-password/verification',
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
   [ROUTES.myActivity]: '/my-activity',
@@ -109,10 +115,12 @@ export default function AppNavigator() {
   );
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [selectedAuction, setSelectedAuction] = useState(null);
   const [selectedAuctionProduct, setSelectedAuctionProduct] = useState(null);
 
-  // Always show the splash screen briefly on startup across platforms.
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({
     GreatVibes_400Regular: require('@expo-google-fonts/great-vibes/400Regular/GreatVibes_400Regular.ttf'),
@@ -124,14 +132,41 @@ export default function AppNavigator() {
   });
 
   useEffect(() => {
-    const splashTimer = setTimeout(() => {
-      // Hide splash and, if we were still on the `splash` route (native),
-      // navigate to the login route so the app continues startup.
-      setIsLoading(false);
-      setCurrentRoute((prev) => (prev === ROUTES.splash ? ROUTES.login : prev));
-    }, 1800);
+    if (!fontsLoaded) {
+      return undefined;
+    }
 
-    return () => clearTimeout(splashTimer);
+    const frame = requestAnimationFrame(() => {
+      ExpoSplashScreen.hideAsync().catch(() => {});
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      await Promise.all([
+        new Promise((resolve) => setTimeout(resolve, 1800)),
+        loadSession(),
+      ]);
+
+      if (cancelled) return;
+
+      const { getSession } = await import('../utils/session');
+      const session = getSession();
+
+      setIsLoading(false);
+      setCurrentRoute((prev) =>
+        prev === ROUTES.splash
+          ? session ? ROUTES.home : ROUTES.login
+          : prev
+      );
+    }
+
+    init();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -214,8 +249,12 @@ export default function AppNavigator() {
       return ROUTES.login;
     }
 
-    if (route === ROUTES.resetPassword) {
+    if (route === ROUTES.forgotPasswordVerification) {
       return ROUTES.forgotPassword;
+    }
+
+    if (route === ROUTES.resetPassword) {
+      return ROUTES.forgotPasswordVerification;
     }
 
     if (route === ROUTES.signUp) {
@@ -243,7 +282,7 @@ export default function AppNavigator() {
     }
 
     if (route === ROUTES.createProduct) {
-      return ROUTES.auctions;
+      return ROUTES.productCatalog;
     }
 
     if (route === ROUTES.auctionDetail) {
@@ -321,6 +360,7 @@ export default function AppNavigator() {
   const layoutVariant =
     currentRoute === ROUTES.login ||
     currentRoute === ROUTES.forgotPassword ||
+    currentRoute === ROUTES.forgotPasswordVerification ||
     currentRoute === ROUTES.resetPassword ||
     currentRoute === ROUTES.signUp ||
     currentRoute === ROUTES.signUpAuthorizing ||
@@ -346,7 +386,7 @@ export default function AppNavigator() {
           : currentRoute === ROUTES.auctionProduct
           ? 'subastas'
           : currentRoute === ROUTES.createProduct
-          ? 'subastas'
+          ? 'catalogo'
           : currentRoute === ROUTES.productCatalog
           ? 'catalogo'
           : currentRoute === ROUTES.home
@@ -360,7 +400,7 @@ export default function AppNavigator() {
       }
       enableSwipeBack={canNavigateBack}
       floatingAction={
-        currentRoute === ROUTES.auctions ? (
+        currentRoute === ROUTES.productCatalog ? (
           <AuctionSpeedDial
             onCreateProduct={() => navigateTo(ROUTES.createProduct)}
           />
@@ -387,7 +427,10 @@ export default function AppNavigator() {
           onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
         />
       ) : currentRoute === ROUTES.productCatalog ? (
-        <ProductCatalogScreen />
+        <ProductCatalogScreen
+          onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+          onGoHome={() => navigateTo(ROUTES.home)}
+        />
       ) : currentRoute === ROUTES.home ? (
         <HomeScreen
           onAuctionPress={handleAuctionPress}
@@ -398,13 +441,30 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.penaltyPayment ? (
         <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
-        <ProfileScreen onLogout={() => navigateTo(ROUTES.login)} />
+        <ProfileScreen onLogout={() => {
+          import('../utils/session').then(({ clearSession }) => clearSession());
+          navigateTo(ROUTES.login, { replace: true });
+        }} />
       ) : currentRoute === ROUTES.forgotPassword ? (
         <ForgotPasswordScreen
-          onResetLinkPress={() => navigateTo(ROUTES.resetPassword)}
+          onCodeSent={({ email }) => {
+            setRecoveryEmail(email);
+            setRecoveryCode('');
+            navigateTo(ROUTES.forgotPasswordVerification);
+          }}
+        />
+      ) : currentRoute === ROUTES.forgotPasswordVerification ? (
+        <ForgotPasswordVerificationScreen
+          email={recoveryEmail}
+          onVerified={({ code }) => {
+            setRecoveryCode(code);
+            navigateTo(ROUTES.resetPassword);
+          }}
         />
       ) : currentRoute === ROUTES.resetPassword ? (
         <ResetPasswordScreen
+          code={recoveryCode}
+          email={recoveryEmail}
           onFinish={() => navigateTo(ROUTES.login, { replace: true })}
         />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
@@ -414,10 +474,15 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.signUpVerification ? (
         <SignUpVerificationScreen
           email={registrationEmail}
-          onVerified={() => navigateTo(ROUTES.signUpFinal)}
+          onVerified={({ code }) => {
+            setVerificationCode(code);
+            navigateTo(ROUTES.signUpFinal);
+          }}
         />
       ) : currentRoute === ROUTES.signUpFinal ? (
         <SignUpFinalScreen
+          code={verificationCode}
+          email={registrationEmail}
           onSubmitSuccess={() => navigateTo(ROUTES.paymentMethods)}
         />
       ) : currentRoute === ROUTES.paymentMethods ? (

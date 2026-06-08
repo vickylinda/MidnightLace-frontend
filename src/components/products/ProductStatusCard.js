@@ -1,4 +1,4 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
@@ -33,20 +33,33 @@ const STATUS_STYLES = {
 export default function ProductStatusCard({
   description,
   imageSource,
+  onPress,
   owner,
   status,
   statusLabel,
   title,
 }) {
+  const Container = onPress ? Pressable : View;
+
   return (
-    <View style={styles.card}>
+    <Container
+      accessibilityRole={onPress ? 'button' : undefined}
+      onPress={onPress}
+      style={
+        onPress
+          ? ({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]
+          : styles.card
+      }
+    >
       <View style={styles.imageFrame}>
-        <Image resizeMode="contain" source={imageSource} style={styles.image} />
+        {imageSource ? (
+          <Image resizeMode="contain" source={imageSource} style={styles.image} />
+        ) : null}
       </View>
 
       <View style={styles.content}>
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.owner}>Publicado por @{owner}</Text>
+        {owner ? <Text style={styles.owner}>Publicado por @{owner}</Text> : null}
 
         <View style={styles.statusRow}>
           <Text style={styles.statusPrefix}>Estado:</Text>
@@ -55,9 +68,9 @@ export default function ProductStatusCard({
           </View>
         </View>
 
-        <Text style={styles.description}>{description}</Text>
+        {description ? <Text style={styles.description}>{description}</Text> : null}
       </View>
-    </View>
+    </Container>
   );
 }
 
@@ -72,6 +85,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: 12,
     width: '100%',
+  },
+  cardPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.992 }],
   },
   imageFrame: {
     alignItems: 'center',
