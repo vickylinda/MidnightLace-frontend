@@ -328,7 +328,6 @@ export default function AppNavigator() {
           />
         ) : null
       }
-      isBottomNavigationInteractive={currentRoute !== ROUTES.auctionDetail}
       onBackPress={canNavigateBack ? handleBackPress : undefined}
       onNavItemPress={handleNavItemPress}
       showLogo={currentRoute !== ROUTES.home}
