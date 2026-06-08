@@ -1,19 +1,11 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AuctionCard from '../components/auctions/AuctionCard';
+import { featuredAuction } from '../data/auctions';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 
-const featuredAuction = {
-  category: 'Oro',
-  dateTime: '22/08/2026 · 19:30h',
-  imageSource: require('../assets/auctions/strawberry-pattern-special.jpeg'),
-  location: 'Hotel Alvear Art, CABA',
-  pieces: 3,
-  status: 'en curso',
-};
-
-export default function HomeScreen({ onViewAllAuctions }) {
+export default function HomeScreen({ onAuctionPress, onViewAllAuctions }) {
   return (
     <View style={styles.screen}>
       <Image
@@ -35,9 +27,11 @@ export default function HomeScreen({ onViewAllAuctions }) {
         dateTime={featuredAuction.dateTime}
         imageSource={featuredAuction.imageSource}
         location={featuredAuction.location}
+        onPress={() => onAuctionPress?.(featuredAuction)}
         pieces={featuredAuction.pieces}
         status={featuredAuction.status}
         style={styles.card}
+        title={featuredAuction.title}
       />
 
       <Pressable style={styles.allAuctionsButton} onPress={onViewAllAuctions}>
