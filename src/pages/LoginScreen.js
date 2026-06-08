@@ -7,6 +7,8 @@ import RememberCheckbox from '../components/forms/RememberCheckbox';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import { validateEmail, validatePassword } from '../utils/authValidation';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
+import { setSession } from '../utils/session';
 
 export default function LoginScreen({
   onForgotPasswordPress,
@@ -21,6 +23,8 @@ export default function LoginScreen({
     email: false,
     password: false,
   });
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
 
   const emailError = validateEmail(email);
   const passwordError = validatePassword(password);
@@ -35,15 +39,28 @@ export default function LoginScreen({
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
-    setTouched({
-      email: true,
-      password: true,
-    });
+    setTouched({ email: true, password: true });
+    setApiError('');
 
-    if (!emailError && !passwordError) {
+    if (emailError || passwordError) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const session = await apiFetch('/v1/auth/login', {
+        method: 'POST',
+        body: { email, clave: password },
+        auth: false,
+      });
+      setSession(session);
       onLoginSuccess?.();
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, 'No pudimos iniciar sesión.'));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -83,8 +100,12 @@ export default function LoginScreen({
           </Pressable>
         </View>
 
-        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-          Enviar
+        {apiError ? (
+          <Text style={styles.apiError}>{apiError}</Text>
+        ) : null}
+
+        <PrimaryButton disabled={!isFormValid || loading} onPress={handleSubmit}>
+          {loading ? 'Ingresando...' : 'Enviar'}
         </PrimaryButton>
 
         <View style={styles.registerRow}>
@@ -144,5 +165,12 @@ const styles = StyleSheet.create({
     color: colors.textBurgundy,
     fontFamily: fonts.regular,
     fontSize: 16,
+  },
+  apiError: {
+    alignSelf: 'flex-start',
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    marginBottom: 8,
   },
 });

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import DeclarationCheckbox from '../components/forms/DeclarationCheckbox';
 import LineSelectField from '../components/forms/LineSelectField';
@@ -8,6 +8,7 @@ import PrimaryButton from '../components/forms/PrimaryButton';
 import ProductImagePicker from '../components/products/ProductImagePicker';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
 
 const PRODUCT_TYPES = [
   { label: 'Prenda, accesorio u otro bien', value: 'standard' },
@@ -23,6 +24,7 @@ const INITIAL_FORM = {
   itemCount: '1',
   name: '',
   objectDate: '',
+  precioBase: '',
   productType: '',
   relevantDetails: '',
 };
@@ -38,11 +40,15 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
   const [returnAgreement, setReturnAgreement] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
 
   const isSpecialProduct =
     form.productType === 'artwork' || form.productType === 'designer';
   const errors = useMemo(() => {
     const itemCount = Number(form.itemCount);
+
+    const precio = parseFloat(form.precioBase);
 
     return {
       creator: isSpecialProduct
@@ -71,6 +77,10 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
       objectDate: isSpecialProduct
         ? requiredError(form.objectDate, 'la fecha del objeto')
         : '',
+      precioBase:
+        Number.isFinite(precio) && precio > 0.01
+          ? ''
+          : 'Ingresá un precio base mayor a $0.01.',
       productType: requiredError(form.productType, 'el tipo de producto'),
       returnAgreement: returnAgreement
         ? ''
@@ -97,19 +107,55 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
     return touched[field] || submitted ? errors[field] : '';
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
+    setApiError('');
 
     if (!isFormValid) {
       return;
     }
 
-    onSubmitSuccess?.({
-      ...form,
-      images,
-      legalDeclaration,
-      returnAgreement,
-    });
+    setLoading(true);
+    try {
+      const formData = new FormData();
+
+      const descripcionParts = [form.name, form.description];
+      if (form.relevantDetails.trim()) {
+        descripcionParts.push(form.relevantDetails);
+      }
+      formData.append('descripcionCompleta', descripcionParts.filter(Boolean).join('\n\n'));
+      formData.append('declaracionPropiedad', String(legalDeclaration));
+      formData.append('precioBase', String(parseFloat(form.precioBase)));
+
+      const imageValues = await Promise.all(
+        images.slice(0, 8).map(async (image) => {
+          if (Platform.OS === 'web') {
+            const res = await fetch(image.uri);
+            const blob = await res.blob();
+            return new File([blob], image.name, { type: blob.type || 'image/jpeg' });
+          }
+          return { uri: image.uri, name: image.name, type: 'image/jpeg' };
+        })
+      );
+      imageValues.forEach((value, index) => {
+        formData.append(`foto${index + 1}`, value);
+      });
+
+      if (isSpecialProduct) {
+        formData.append('detallesArtisticos', JSON.stringify({
+          artista: form.creator,
+          fechaObra: form.objectDate || null,
+          historia: form.history || null,
+        }));
+      }
+
+      await apiFetch('/v1/productos', { method: 'POST', body: formData });
+      onSubmitSuccess?.();
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, 'No pudimos registrar el producto.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -163,6 +209,17 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
         }
         placeholder="Ej. 18"
         value={form.itemCount}
+      />
+
+      <LineTextField
+        error={visibleError('precioBase')}
+        keyboardType="decimal-pad"
+        label="Precio base (ARS)*"
+        maxLength={12}
+        onBlur={() => handleBlur('precioBase')}
+        onChangeText={(value) => updateField('precioBase', value.replace(/[^0-9.]/g, ''))}
+        placeholder="Ej. 15000"
+        value={form.precioBase}
       />
 
       {isSpecialProduct ? (
@@ -242,13 +299,17 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
         />
       </View>
 
+      {apiError ? (
+        <Text style={styles.apiError}>{apiError}</Text>
+      ) : null}
+
       <View style={styles.submit}>
         <PrimaryButton
-          disabled={!isFormValid}
+          disabled={!isFormValid || loading}
           onPress={handleSubmit}
           style={styles.submitButton}
         >
-          Solicitar aprobación
+          {loading ? 'Enviando...' : 'Solicitar aprobación'}
         </PrimaryButton>
       </View>
     </View>
@@ -311,5 +372,13 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     width: 220,
+  },
+  apiError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 8,
+    textAlign: 'center',
   },
 });

@@ -1,15 +1,17 @@
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 import AddressAutocompleteField from '../components/forms/AddressAutocompleteField';
 import AddressMapPreview from '../components/forms/AddressMapPreview';
 import AuthTextField from '../components/forms/AuthTextField';
+import CountrySelectField from '../components/forms/CountrySelectField';
 import DniUploadButton from '../components/forms/DniUploadButton';
 import PrimaryButton from '../components/forms/PrimaryButton';
 import SignUpProgress from '../components/signup/SignUpProgress';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
 import { validateEmail, validateUsername } from '../utils/authValidation';
+import { apiFetch, getApiErrorMessage } from '../utils/http';
 
 const INITIAL_ADDRESS = {
   addressLine: '',
@@ -29,6 +31,7 @@ const REQUIRED_FIELD_NAMES = [
   'lastName',
   'username',
   'email',
+  'documento',
   'dni',
   'country',
   'province',
@@ -72,8 +75,11 @@ export default function SignUpScreen({ onSubmitSuccess }) {
   const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
+  const [documento, setDocumento] = useState('');
   const [dniFiles, setDniFiles] = useState([]);
   const [address, setAddress] = useState(INITIAL_ADDRESS);
+  const [selectedCountryId, setSelectedCountryId] = useState(null);
+  const [countries, setCountries] = useState([]);
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState(
     REQUIRED_FIELD_NAMES.reduce(
@@ -84,9 +90,18 @@ export default function SignUpScreen({ onSubmitSuccess }) {
       {}
     )
   );
+  const [loading, setLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
+
+  useEffect(() => {
+    apiFetch('/v1/paises?cantidad=100', { auth: false })
+      .then((data) => setCountries(data.datos ?? []))
+      .catch(() => {});
+  }, []);
 
   const errors = {
-    country: requiredError(address.country, 'el país'),
+    country: selectedCountryId ? '' : 'Seleccioná el país.',
+    documento: requiredError(documento, 'tu número de documento'),
     dni:
       dniFiles.length >= 2
         ? ''
@@ -146,20 +161,62 @@ export default function SignUpScreen({ onSubmitSuccess }) {
     }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
     setTouched(
-      REQUIRED_FIELD_NAMES.reduce(
-        (fields, field) => ({
-          ...fields,
-          [field]: true,
-        }),
-        {}
-      )
+      REQUIRED_FIELD_NAMES.reduce((fields, field) => ({ ...fields, [field]: true }), {})
     );
+    setApiError('');
 
-    if (isFormValid) {
+    if (!isFormValid) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('documento', documento);
+      formData.append('nombre', firstName);
+      formData.append('apellido', lastName);
+      formData.append('email', email);
+      formData.append('nombreUsuario', username);
+      formData.append('direccion', address.street);
+      formData.append('altura', address.number);
+      formData.append('localidad', address.locality);
+      formData.append('ciudad', address.province);
+      formData.append('idPais', String(selectedCountryId));
+      if (address.apartment) {
+        formData.append('departamento', address.apartment);
+      }
+      const dniValues = await Promise.all(
+        [dniFiles[0], dniFiles[1]].map(async (file) => {
+          if (Platform.OS === 'web') {
+            const res = await fetch(file.uri);
+            const blob = await res.blob();
+            return new File([blob], file.name, { type: blob.type || 'image/jpeg' });
+          }
+          return { uri: file.uri, name: file.name, type: 'image/jpeg' };
+        })
+      );
+      formData.append('fotoDocFrente', dniValues[0]);
+      formData.append('fotoDocDorso', dniValues[1]);
+
+      const result = await apiFetch('/v1/auth/registro', {
+        method: 'POST',
+        body: formData,
+        auth: false,
+      });
+
+      if (!result.aprobado) {
+        setApiError(result.mensaje);
+        return;
+      }
+
       onSubmitSuccess?.({ email });
+    } catch (error) {
+      setApiError(getApiErrorMessage(error, 'No pudimos completar el registro.'));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -211,6 +268,15 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         value={email}
       />
 
+      <AuthTextField
+        error={getVisibleError(touched, submitted, 'documento', errors.documento)}
+        keyboardType="numeric"
+        label="Número de documento*"
+        onBlur={() => handleBlur('documento')}
+        onChangeText={setDocumento}
+        value={documento}
+      />
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Subir DNI</Text>
         <Text style={styles.sectionDescription}>
@@ -230,12 +296,15 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         onSelect={handleAddressSelect}
       />
 
-      <AuthTextField
+      <CountrySelectField
+        countries={countries}
         error={getVisibleError(touched, submitted, 'country', errors.country)}
         label="País*"
-        onBlur={() => handleBlur('country')}
-        onChangeText={(value) => setAddressField('country', value)}
-        value={address.country}
+        onChange={(numero) => {
+          setSelectedCountryId(numero);
+          handleBlur('country');
+        }}
+        value={selectedCountryId}
       />
 
       <AuthTextField
@@ -299,9 +368,13 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         ) : null}
       </View>
 
+      {apiError ? (
+        <Text style={styles.apiError}>{apiError}</Text>
+      ) : null}
+
       <View style={styles.submit}>
-        <PrimaryButton disabled={!isFormValid} onPress={handleSubmit}>
-          Enviar
+        <PrimaryButton disabled={!isFormValid || loading} onPress={handleSubmit}>
+          {loading ? 'Enviando...' : 'Enviar'}
         </PrimaryButton>
       </View>
     </View>
@@ -368,5 +441,13 @@ const styles = StyleSheet.create({
   submit: {
     alignItems: 'center',
     marginTop: 20,
+  },
+  apiError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 8,
+    textAlign: 'center',
   },
 });
