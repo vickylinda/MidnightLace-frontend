@@ -5,6 +5,7 @@ import { Platform } from 'react-native';
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AuctionDetailScreen from '../pages/AuctionDetailScreen';
+import AuctionProductScreen from '../pages/AuctionProductScreen';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
 import CreateProductScreen from '../pages/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
@@ -24,6 +25,7 @@ import SplashScreen from '../pages/SplashScreen';
 
 const ROUTES = {
   auctionDetail: 'auctionDetail',
+  auctionProduct: 'auctionProduct',
   auctions: 'auctions',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
@@ -44,6 +46,7 @@ const ROUTES = {
 
 const ROUTE_PATHS = {
   [ROUTES.auctionDetail]: '/subasta',
+  [ROUTES.auctionProduct]: '/subasta/producto',
   [ROUTES.auctions]: '/auctions',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
@@ -107,6 +110,7 @@ export default function AppNavigator() {
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
   const [selectedAuction, setSelectedAuction] = useState(null);
+  const [selectedAuctionProduct, setSelectedAuctionProduct] = useState(null);
 
   // Always show the splash screen briefly on startup across platforms.
   const [isLoading, setIsLoading] = useState(true);
@@ -164,10 +168,33 @@ export default function AppNavigator() {
   }, [currentRoute, isLoading, selectedAuction]);
 
   useEffect(() => {
-    if (currentRoute !== ROUTES.auctionDetail && selectedAuction) {
+    if (
+      currentRoute !== ROUTES.auctionDetail &&
+      currentRoute !== ROUTES.auctionProduct &&
+      selectedAuction
+    ) {
       setSelectedAuction(null);
     }
   }, [currentRoute, selectedAuction]);
+
+  useEffect(() => {
+    if (
+      !isLoading &&
+      currentRoute === ROUTES.auctionProduct &&
+      !selectedAuctionProduct
+    ) {
+      navigateTo(
+        selectedAuction ? ROUTES.auctionDetail : ROUTES.auctions,
+        { replace: true }
+      );
+    }
+  }, [currentRoute, isLoading, selectedAuction, selectedAuctionProduct]);
+
+  useEffect(() => {
+    if (currentRoute !== ROUTES.auctionProduct && selectedAuctionProduct) {
+      setSelectedAuctionProduct(null);
+    }
+  }, [currentRoute, selectedAuctionProduct]);
 
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
@@ -223,6 +250,10 @@ export default function AppNavigator() {
       return ROUTES.auctions;
     }
 
+    if (route === ROUTES.auctionProduct) {
+      return ROUTES.auctionDetail;
+    }
+
     if (
       route === ROUTES.auctions ||
       route === ROUTES.productCatalog ||
@@ -254,6 +285,11 @@ export default function AppNavigator() {
   function handleAuctionPress(auction) {
     setSelectedAuction(auction);
     navigateTo(ROUTES.auctionDetail);
+  }
+
+  function handleAuctionProductPress(product) {
+    setSelectedAuctionProduct(product);
+    navigateTo(ROUTES.auctionProduct);
   }
 
   function handleNavItemPress(itemId) {
@@ -307,6 +343,8 @@ export default function AppNavigator() {
           ? 'subastas'
           : currentRoute === ROUTES.auctionDetail
           ? 'subastas'
+          : currentRoute === ROUTES.auctionProduct
+          ? 'subastas'
           : currentRoute === ROUTES.createProduct
           ? 'subastas'
           : currentRoute === ROUTES.productCatalog
@@ -334,8 +372,14 @@ export default function AppNavigator() {
       showNotifications={layoutVariant !== 'auth'}
       variant={layoutVariant}
     >
-      {currentRoute === ROUTES.auctionDetail ? (
-        selectedAuction ? <AuctionDetailScreen /> : null
+      {currentRoute === ROUTES.auctionProduct ? (
+        selectedAuctionProduct ? (
+          <AuctionProductScreen product={selectedAuctionProduct} />
+        ) : null
+      ) : currentRoute === ROUTES.auctionDetail ? (
+        selectedAuction ? (
+          <AuctionDetailScreen onProductPress={handleAuctionProductPress} />
+        ) : null
       ) : currentRoute === ROUTES.auctions ? (
         <AllAuctionsScreen onAuctionPress={handleAuctionPress} />
       ) : currentRoute === ROUTES.createProduct ? (

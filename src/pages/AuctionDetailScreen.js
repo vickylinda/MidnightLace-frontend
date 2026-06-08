@@ -1,5 +1,6 @@
 import {
   Image,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -68,9 +69,18 @@ function LocationPinIcon({ size = 31 }) {
   );
 }
 
-function ProductLotCard({ imageSize, lot }) {
+function ProductLotCard({ imageSize, lot, onPress }) {
   return (
-    <View style={[styles.productCard, { minHeight: imageSize }]}>
+    <Pressable
+      accessibilityLabel={`Ver producto ${lot.title}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.productCard,
+        { minHeight: imageSize },
+        pressed ? styles.productCardPressed : null,
+      ]}
+    >
       <Image
         resizeMode="cover"
         source={lot.imageSource}
@@ -104,11 +114,11 @@ function ProductLotCard({ imageSize, lot }) {
           </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-export default function AuctionDetailScreen() {
+export default function AuctionDetailScreen({ onProductPress }) {
   const { width } = useWindowDimensions();
   const horizontalPadding = width < 360 ? 18 : 30;
   const contentWidth = Math.min(width - horizontalPadding * 2, 347);
@@ -151,7 +161,12 @@ export default function AuctionDetailScreen() {
 
         <View style={styles.lotList}>
           {referenceLots.map((lot) => (
-            <ProductLotCard imageSize={imageSize} key={lot.code} lot={lot} />
+            <ProductLotCard
+              imageSize={imageSize}
+              key={lot.code}
+              lot={lot}
+              onPress={() => onProductPress?.(lot)}
+            />
           ))}
         </View>
 
@@ -166,7 +181,7 @@ export default function AuctionDetailScreen() {
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
-    paddingBottom: 38,
+    paddingBottom: 12,
     paddingTop: 12,
     zIndex: 2,
   },
@@ -207,10 +222,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 11,
-    minHeight: 81,
+    minHeight: 86,
     paddingLeft: 16,
     paddingRight: 11,
-    paddingTop: 21,
+    paddingTop: 10,
     width: '100%',
   },
   countdownBlock: {
@@ -223,16 +238,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 0,
     lineHeight: 19,
+    marginTop: 10,
   },
   countdownValue: {
     color: colors.burgundy,
-    fontFamily: fonts.regular,
+    fontFamily: fonts.semiBold,
     fontSize: 24,
     letterSpacing: 0,
     lineHeight: 31,
-  },
-  countdownDays: {
-    fontFamily: fonts.semiBold,
   },
   auctionMeta: {
     alignItems: 'flex-end',
@@ -241,10 +254,11 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     paddingBottom: 12,
     paddingTop: 0,
+    gap: 4,
   },
   categoryBadge: {
     alignItems: 'center',
-    backgroundColor: colors.burgundy,
+    backgroundColor: '#BC1A50',
     borderRadius: 5,
     height: 24,
     justifyContent: 'center',
@@ -252,14 +266,14 @@ const styles = StyleSheet.create({
   },
   categoryBadgeText: {
     color: colors.white,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.semiBold,
     fontSize: 12,
     letterSpacing: 0,
     lineHeight: 15,
   },
   locationRow: {
     alignItems: 'center',
-    columnGap: 5,
+    columnGap: 2,
     flexDirection: 'row',
   },
   locationText: {
@@ -280,6 +294,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     overflow: 'hidden',
     width: '100%',
+  },
+  productCardPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.995 }],
   },
   productImage: {
     backgroundColor: colors.cardBlush,
