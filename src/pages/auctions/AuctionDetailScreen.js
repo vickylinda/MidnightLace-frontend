@@ -181,7 +181,6 @@ export default function AuctionDetailScreen({ onProductPress }) {
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
-    paddingBottom: 12,
     paddingTop: 12,
     zIndex: 2,
   },
