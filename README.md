@@ -44,7 +44,9 @@ Para instalarlo:
 3. Si Android se pone desconfiado y pregunta si querés permitir instalar apps desde el navegador, aceptá.
 4. Instalá la app y abrila como cualquier aplicación normal.
 
-![QR para descargar el APK](docs/midnight-lace-apk-qr.png)
+<p align="center">
+  <img src="docs/midnight-lace-apk-qr.png" alt="QR para descargar el APK" width="240" />
+</p>
 
 Link directo:
 
