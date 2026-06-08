@@ -1,6 +1,6 @@
 import { Image, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import PrimaryButton from '../forms/PrimaryButton';
+import PrimaryButton from '../forms/controls/PrimaryButton';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 

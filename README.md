@@ -118,5 +118,5 @@ Esto sigue el ciclo de estados del backend: `pendiente` → `verificación` → 
 | Métodos de pago                 | `GET` / `POST` / `DELETE /v1/medios-pago`              |
 | Todas las subastas              | `GET /v1/subastas` + WebSocket                         |
 | Mi actividad                    | Pujas del usuario                                      |
-| Recuperar / resetear contraseña | `POST /v1/auth/recuperar`, `POST /v1/auth/restablecer` |
+| Resetear contraseña             | `POST /v1/auth/restablecer` |
 | Pago de multa                   | Endpoint de multas                                     |

@@ -6,24 +6,24 @@ import { loadSession } from '../utils/session';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
-import AuctionDetailScreen from '../pages/AuctionDetailScreen';
-import AllAuctionsScreen from '../pages/AllAuctionsScreen';
-import CreateProductScreen from '../pages/CreateProductScreen';
-import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
-import ForgotPasswordVerificationScreen from '../pages/ForgotPasswordVerificationScreen';
-import HomeScreen from '../pages/HomeScreen';
-import LoginScreen from '../pages/LoginScreen';
-import MyActivityScreen from '../pages/MyActivityScreen';
-import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
-import PenaltyPaymentScreen from '../pages/PenaltyPaymentScreen';
-import ProductCatalogScreen from '../pages/ProductCatalogScreen';
-import ProfileScreen from '../pages/ProfileScreen';
-import ResetPasswordScreen from '../pages/ResetPasswordScreen';
-import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
-import SignUpFinalScreen from '../pages/SignUpFinalScreen';
-import SignUpScreen from '../pages/SignUpScreen';
-import SignUpVerificationScreen from '../pages/SignUpVerificationScreen';
-import SplashScreen from '../pages/SplashScreen';
+import AuctionDetailScreen from '../pages/auctions/AuctionDetailScreen';
+import AllAuctionsScreen from '../pages/auctions/AllAuctionsScreen';
+import CreateProductScreen from '../pages/products/CreateProductScreen';
+import ForgotPasswordScreen from '../pages/auth/ForgotPasswordScreen';
+import ForgotPasswordVerificationScreen from '../pages/auth/ForgotPasswordVerificationScreen';
+import HomeScreen from '../pages/home/HomeScreen';
+import LoginScreen from '../pages/auth/LoginScreen';
+import MyActivityScreen from '../pages/activity/MyActivityScreen';
+import PaymentMethodsScreen from '../pages/signup/PaymentMethodsScreen';
+import PenaltyPaymentScreen from '../pages/activity/PenaltyPaymentScreen';
+import ProductCatalogScreen from '../pages/products/ProductCatalogScreen';
+import ProfileScreen from '../pages/profile/ProfileScreen';
+import ResetPasswordScreen from '../pages/auth/ResetPasswordScreen';
+import SignUpAuthorizingScreen from '../pages/signup/SignUpAuthorizingScreen';
+import SignUpFinalScreen from '../pages/signup/SignUpFinalScreen';
+import SignUpScreen from '../pages/signup/SignUpScreen';
+import SignUpVerificationScreen from '../pages/signup/SignUpVerificationScreen';
+import SplashScreen from '../pages/splash/SplashScreen';
 
 const ROUTES = {
   auctionDetail: 'auctionDetail',
@@ -242,7 +242,7 @@ export default function AppNavigator() {
     }
 
     if (route === ROUTES.createProduct) {
-      return ROUTES.auctions;
+      return ROUTES.productCatalog;
     }
 
     if (route === ROUTES.auctionDetail) {
@@ -335,7 +335,7 @@ export default function AppNavigator() {
           : currentRoute === ROUTES.auctionDetail
           ? 'subastas'
           : currentRoute === ROUTES.createProduct
-          ? 'subastas'
+          ? 'catalogo'
           : currentRoute === ROUTES.productCatalog
           ? 'catalogo'
           : currentRoute === ROUTES.home
@@ -349,7 +349,7 @@ export default function AppNavigator() {
       }
       enableSwipeBack={canNavigateBack}
       floatingAction={
-        currentRoute === ROUTES.auctions ? (
+        currentRoute === ROUTES.productCatalog ? (
           <AuctionSpeedDial
             onCreateProduct={() => navigateTo(ROUTES.createProduct)}
           />
@@ -370,7 +370,10 @@ export default function AppNavigator() {
           onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
         />
       ) : currentRoute === ROUTES.productCatalog ? (
-        <ProductCatalogScreen />
+        <ProductCatalogScreen
+          onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+          onGoHome={() => navigateTo(ROUTES.home)}
+        />
       ) : currentRoute === ROUTES.home ? (
         <HomeScreen
           onAuctionPress={handleAuctionPress}

@@ -273,6 +273,7 @@ const styles = StyleSheet.create({
   },
   childrenWrapper: {
     flex: 1,
+    paddingBottom: 50,
   },
   keyboardScrollSpacer: {
     height: 160,
@@ -291,11 +292,9 @@ const styles = StyleSheet.create({
   },
   bottomLace: {
     height: LACE_HEIGHT,
-    marginTop: 30,
     pointerEvents: 'none',
     transform: [{ rotate: '180deg' }],
     width: '100%',
-    zIndex: 12,
   },
   floatingAction: {
     position: 'absolute',
