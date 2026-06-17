@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -10,12 +10,13 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import AddressAutocompleteField from '../../components/forms/address/AddressAutocompleteField';
 import AddressMapPreview from '../../components/forms/address/AddressMapPreview';
+import CountrySelectField from '../../components/forms/address/CountrySelectField';
+import { useToast } from '../../components/feedback/ToastProvider';
 import AuthTextField from '../../components/forms/auth/AuthTextField';
 import DniUploadButton from '../../components/forms/uploads/DniUploadButton';
 import PasswordChecklist, {
@@ -23,13 +24,27 @@ import PasswordChecklist, {
 } from '../../components/forms/auth/PasswordChecklist';
 import PrimaryButton from '../../components/forms/controls/PrimaryButton';
 import PaymentMethodsScreen from '../signup/PaymentMethodsScreen';
+import {
+  deletePaymentMethod,
+  listCountries,
+  listPaymentMethods,
+} from '../../services/paymentMethodsApi';
+import {
+  changePassword,
+  getProfile,
+  toUploadValue,
+  updateProfile,
+} from '../../services/profileApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
+import { resolveApiAssetUrl } from '../../utils/config';
+import { getApiErrorMessage } from '../../utils/http';
 
 const INITIAL_ADDRESS = {
   addressLine: 'Av. Callao 1234, CABA, Argentina',
   apartment: '',
   country: 'Argentina',
+  countryId: '',
   displayAddressLine: 'Av. Callao 1234, CABA, Argentina',
   latitude: null,
   locality: 'CABA',
@@ -44,38 +59,9 @@ const REQUIRED_ADDRESS_FIELDS = [
   'country',
   'province',
   'locality',
+  'postalCode',
   'street',
   'number',
-];
-
-const mockProfile = {
-  category: 'Oro',
-  email: 'camila.rose@gmail.com',
-  firstName: 'Camila',
-  lastName: 'Rose',
-};
-
-const initialProfileImage = require('../../assets/profile/profile-pic.jpg');
-
-const initialPayments = [
-  {
-    id: 'card-1',
-    icon: 'card',
-    lines: ['Visa terminada en 1234', 'Vencimiento: 07/2028'],
-    title: 'Tarjeta de credito',
-  },
-  {
-    id: 'bank-1',
-    icon: 'bank',
-    lines: ['Banco Galicia', 'CBU: 28505909 40090418135201'],
-    title: 'Cuenta Bancaria',
-  },
-  {
-    id: 'check-1',
-    icon: 'check',
-    lines: ['N° 00034567'],
-    title: 'Cheque certificado',
-  },
 ];
 
 function normalizeAddressPart(value) {
@@ -83,7 +69,96 @@ function normalizeAddressPart(value) {
 }
 
 function requiredError(value, label) {
-  return String(value || '').trim() ? '' : `Completa ${label}.`;
+  return String(value || '').trim() ? '' : `Completá ${label}.`;
+}
+
+function normalizeCountryName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function findCountryByName(countries, value) {
+  const normalized = normalizeCountryName(value);
+  return countries.find(
+    (country) => normalizeCountryName(country.nombre) === normalized
+  );
+}
+
+function capitalizeCategory(value) {
+  const category = String(value || 'comun').toLowerCase();
+  const labels = {
+    comun: 'Común',
+    especial: 'Especial',
+    oro: 'Oro',
+    plata: 'Plata',
+    platino: 'Platino',
+  };
+
+  return (
+    labels[category] ||
+    `${category.charAt(0).toUpperCase()}${category.slice(1)}`
+  );
+}
+
+function formatPaymentExpiration(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})/);
+
+  if (match) {
+    return `${match[2]}/${match[1].slice(-2)}`;
+  }
+
+  return value || '-';
+}
+
+function getProfileInitials(profile) {
+  const initials = [profile?.nombre, profile?.apellido]
+    .map((value) => String(value || '').trim().charAt(0))
+    .filter(Boolean)
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+  return initials || '?';
+}
+
+function paymentPresentation(payment) {
+  const detail = payment.detalle || {};
+
+  if (payment.tipo === 'cuentaBancaria') {
+    return {
+      icon: 'bank',
+      lines: [
+        detail.nombreBanco || 'Banco sin nombre',
+        `Cuenta: ${detail.numeroCuenta || '-'}`,
+      ],
+      title: 'Cuenta bancaria',
+    };
+  }
+
+  if (payment.tipo === 'chequeCertificado') {
+    return {
+      icon: 'check',
+      lines: [
+        `${payment.moneda || 'ARS'} ${detail.montoGarantizado || 0}`,
+        `Entrega: ${detail.fechaEntrega || '-'}`,
+      ],
+      title: 'Cheque certificado',
+    };
+  }
+
+  return {
+    icon: 'card',
+    lines: [
+      `${detail.red || 'Tarjeta'} terminada en ${
+        detail.ultimosCuatroDigitos || '----'
+      }`,
+      `Vencimiento: ${formatPaymentExpiration(detail.fechaVencimiento)}`,
+    ],
+    title: 'Tarjeta de crédito',
+  };
 }
 
 function buildAddressSearchValue(address) {
@@ -103,6 +178,36 @@ function buildAddressSearchValue(address) {
   return [streetLine, ...locationLine].filter(Boolean).join(', ');
 }
 
+function formatApartment(value) {
+  const apartment = normalizeAddressPart(value);
+
+  if (!apartment) {
+    return '';
+  }
+
+  return /^(dpto\.?|depto\.?)\s*/i.test(apartment)
+    ? apartment
+    : `Dpto. ${apartment}`;
+}
+
+function buildAddressDisplayValue(address) {
+  const streetLine = [address.street, address.number]
+    .map(normalizeAddressPart)
+    .filter(Boolean)
+    .join(' ');
+  const apartmentLine = formatApartment(address.apartment);
+  const locationLine = [
+    address.locality,
+    address.province,
+    address.postalCode,
+    address.country,
+  ]
+    .map(normalizeAddressPart)
+    .filter(Boolean);
+
+  return [streetLine, apartmentLine, ...locationLine].filter(Boolean).join(', ');
+}
+
 function IconButton({ accessibilityLabel, children, onPress }) {
   return (
     <Pressable
@@ -116,9 +221,10 @@ function IconButton({ accessibilityLabel, children, onPress }) {
   );
 }
 
-function AvatarMenuOption({ children, onPress }) {
+function AvatarMenuOption({ children, icon, onPress }) {
   return (
     <Pressable onPress={onPress} style={styles.avatarMenuOption}>
+      {icon}
       <Text style={styles.avatarMenuText}>{children}</Text>
     </Pressable>
   );
@@ -196,6 +302,54 @@ function UploadSmallIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={2.1}
+      />
+    </Svg>
+  );
+}
+
+function CameraSmallIcon() {
+  return (
+    <Svg height={20} viewBox="0 0 24 24" width={20}>
+      <Path
+        d="M4.5 8.5H7L8.3 6H15.7L17 8.5H19.5V18.5H4.5V8.5Z"
+        fill="none"
+        stroke={colors.textBurgundy}
+        strokeLinejoin="round"
+        strokeWidth={1.8}
+      />
+      <Circle
+        cx={12}
+        cy={13.2}
+        fill="none"
+        r={3.2}
+        stroke={colors.textBurgundy}
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
+
+function GallerySmallIcon() {
+  return (
+    <Svg height={20} viewBox="0 0 24 24" width={20}>
+      <Rect
+        fill="none"
+        height={15}
+        rx={2}
+        stroke={colors.textBurgundy}
+        strokeWidth={1.8}
+        width={17}
+        x={3.5}
+        y={4.5}
+      />
+      <Circle cx={9} cy={9.3} fill={colors.textBurgundy} r={1.45} />
+      <Path
+        d="M5.5 17L10.3 12.3L13.3 15.1L15.8 12.7L18.6 15.6"
+        fill="none"
+        stroke={colors.textBurgundy}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.8}
       />
     </Svg>
   );
@@ -335,7 +489,15 @@ function ProfileModal({ children, onClose, title, visible }) {
   );
 }
 
-function AddressEditModal({ address, onClose, onSave, visible }) {
+function AddressEditModal({
+  address,
+  apiError,
+  countries,
+  onClose,
+  onSave,
+  saving,
+  visible,
+}) {
   const [draft, setDraft] = useState(address);
   const [submitted, setSubmitted] = useState(false);
 
@@ -347,9 +509,10 @@ function AddressEditModal({ address, onClose, onSave, visible }) {
   }, [address, visible]);
 
   const errors = {
-    country: requiredError(draft.country, 'el pais'),
+    country: requiredError(draft.countryId, 'el país'),
     locality: requiredError(draft.locality, 'la localidad'),
     number: requiredError(draft.number, 'la altura'),
+    postalCode: requiredError(draft.postalCode, 'el código postal'),
     province: requiredError(draft.province, 'la provincia'),
     street: requiredError(draft.street, 'la calle'),
   };
@@ -393,19 +556,36 @@ function AddressEditModal({ address, onClose, onSave, visible }) {
     <ProfileModal onClose={onClose} title="Editar domicilio" visible={visible}>
       <AddressAutocompleteField
         displayValue={addressSearchValue}
-        onSelect={(nextAddress) =>
+        onSelect={(nextAddress) => {
+          const selectedCountry = findCountryByName(
+            countries,
+            nextAddress.country
+          );
           setDraft((currentAddress) => ({
             ...currentAddress,
             ...nextAddress,
-          }))
-        }
+            countryId: selectedCountry
+              ? String(selectedCountry.numero)
+              : currentAddress.countryId,
+          }));
+        }}
       />
 
-      <AuthTextField
+      <CountrySelectField
+        countries={countries}
         error={submitted ? errors.country : ''}
-        label="Pais*"
-        onChangeText={(value) => setAddressField('country', value)}
-        value={draft.country}
+        label="País*"
+        onChange={(countryId) => {
+          const selectedCountry = countries.find(
+            (country) => String(country.numero) === String(countryId)
+          );
+          setDraft((currentAddress) => ({
+            ...currentAddress,
+            country: selectedCountry?.nombre || '',
+            countryId: String(countryId),
+          }));
+        }}
+        value={draft.countryId}
       />
       <AuthTextField
         error={submitted ? errors.province : ''}
@@ -420,7 +600,8 @@ function AddressEditModal({ address, onClose, onSave, visible }) {
         value={draft.locality}
       />
       <AuthTextField
-        label="Codigo postal"
+        error={submitted ? errors.postalCode : ''}
+        label="Código postal*"
         onChangeText={(value) => setAddressField('postalCode', value)}
         value={draft.postalCode}
       />
@@ -448,34 +629,65 @@ function AddressEditModal({ address, onClose, onSave, visible }) {
         />
       </View>
 
-      <Text style={styles.modalSectionTitle}>Confirmar ubicacion</Text>
+      <Text style={styles.modalSectionTitle}>Confirmar ubicación</Text>
       <AddressMapPreview address={draft} />
 
       <View style={styles.modalSubmit}>
-        <PrimaryButton disabled={!isValid} onPress={handleSave}>
-          Guardar
+        {apiError ? <Text style={styles.modalApiError}>{apiError}</Text> : null}
+        <PrimaryButton disabled={!isValid || saving} onPress={handleSave}>
+          {saving ? 'Guardando...' : 'Guardar'}
         </PrimaryButton>
       </View>
     </ProfileModal>
   );
 }
 
-function DniEditModal({ files, onChange, onClose, visible }) {
+function DniEditModal({
+  apiError,
+  files,
+  onClose,
+  onSave,
+  saving,
+  visible,
+}) {
+  const [draftFiles, setDraftFiles] = useState(files);
+
+  useEffect(() => {
+    if (visible) {
+      setDraftFiles(files);
+    }
+  }, [files, visible]);
+
   return (
     <ProfileModal onClose={onClose} title="Fotos DNI" visible={visible}>
       <Text style={styles.modalDescription}>
-        Subi una foto o archivo del frente y otra del dorso.
+        Subí una foto o archivo del frente y otra del dorso.
       </Text>
-      <DniUploadButton files={files} onChange={onChange} />
+      <DniUploadButton files={draftFiles} onChange={setDraftFiles} />
+      <View style={styles.modalSubmit}>
+        {apiError ? <Text style={styles.modalApiError}>{apiError}</Text> : null}
+        <PrimaryButton
+          disabled={draftFiles.length !== 2 || saving}
+          onPress={() => onSave(draftFiles)}
+        >
+          {saving ? 'Guardando...' : 'Guardar'}
+        </PrimaryButton>
+      </View>
     </ProfileModal>
   );
 }
 
-function PaymentEditModal({ onClose, onSave, visible }) {
+function PaymentEditModal({
+  initialPayment,
+  onClose,
+  onSave,
+  visible,
+}) {
   return (
     <ProfileModal onClose={onClose} title="Medio de pago" visible={visible}>
       <PaymentMethodsScreen
         allowSkip={false}
+        initialPayment={initialPayment}
         onContinue={onSave}
         showHeader={false}
       />
@@ -485,16 +697,18 @@ function PaymentEditModal({ onClose, onSave, visible }) {
 
 function validatePassword(password) {
   if (!password) {
-    return 'Ingresa una contraseña.';
+    return 'Ingresá una contraseña.';
   }
 
   return passwordRules.every((rule) => rule.test(password))
     ? ''
-    : 'La contraseña todavia no cumple los requisitos.';
+    : 'La contraseña todavía no cumple los requisitos.';
 }
 
 function PasswordEditModal({ onClose, visible }) {
+  const [apiError, setApiError] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -504,6 +718,8 @@ function PasswordEditModal({ onClose, visible }) {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmation('');
+      setApiError('');
+      setLoading(false);
       setSubmitted(false);
     }
   }, [visible]);
@@ -518,11 +734,24 @@ function PasswordEditModal({ onClose, visible }) {
   };
   const isValid = Object.values(errors).every((error) => !error);
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
 
-    if (isValid) {
+    if (!isValid) {
+      return;
+    }
+
+    setLoading(true);
+    setApiError('');
+    try {
+      await changePassword(currentPassword, newPassword);
       onClose();
+    } catch (error) {
+      setApiError(
+        getApiErrorMessage(error, 'No pudimos cambiar la contraseña.')
+      );
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -553,8 +782,9 @@ function PasswordEditModal({ onClose, visible }) {
       />
 
       <View style={styles.modalSubmit}>
-        <PrimaryButton disabled={!isValid} onPress={handleSubmit}>
-          Guardar
+        {apiError ? <Text style={styles.modalApiError}>{apiError}</Text> : null}
+        <PrimaryButton disabled={!isValid || loading} onPress={handleSubmit}>
+          {loading ? 'Guardando...' : 'Guardar'}
         </PrimaryButton>
       </View>
     </ProfileModal>
@@ -565,47 +795,162 @@ function LogoutModal({ onClose, onConfirm, visible }) {
   return (
     <ProfileModal onClose={onClose} title="Cerrar sesión" visible={visible}>
       <Text style={styles.logoutText}>
-        ¿Estas seguro/a que queres cerrar sesión?
+        ¿Estás seguro/a de que querés cerrar sesión?
       </Text>
       <View style={styles.logoutActions}>
         <Pressable onPress={onClose} style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>No</Text>
         </Pressable>
-        <PrimaryButton onPress={onConfirm}>Si</PrimaryButton>
+        <PrimaryButton onPress={onConfirm}>Sí</PrimaryButton>
       </View>
     </ProfileModal>
   );
 }
 
 export default function ProfileScreen({ onLogout }) {
+  const { showToast } = useToast();
   const [address, setAddress] = useState(INITIAL_ADDRESS);
-  const [profileImage, setProfileImage] = useState(initialProfileImage);
-  const [isProfileImageMenuOpen, setIsProfileImageMenuOpen] = useState(false);
-  const [dniFiles, setDniFiles] = useState([
-    {
-      id: 'dni-front',
-      name: 'dni-frente.jpg',
-      uri: '',
-    },
-    {
-      id: 'dni-back',
-      name: 'dni-dorso.jpg',
-      uri: '',
-    },
-  ]);
-  const [payments, setPayments] = useState(initialPayments);
-  const [modal, setModal] = useState(null);
+  const [countries, setCountries] = useState([]);
+  const [dniFiles, setDniFiles] = useState([]);
   const [editingPaymentId, setEditingPaymentId] = useState(null);
-  const addressDisplay = address.displayAddressLine || buildAddressSearchValue(address);
+  const [isProfileImageMenuOpen, setIsProfileImageMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null);
+  const [pageError, setPageError] = useState('');
+  const [payments, setPayments] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [profileImage, setProfileImage] = useState(null);
+  const [savingSection, setSavingSection] = useState('');
+  const addressDisplay = buildAddressDisplayValue(address);
 
-  function applyProfileImage(asset) {
+  function profileField(data, camelName, snakeName) {
+    return data?.[camelName] ?? data?.[snakeName] ?? '';
+  }
+
+  function hydrateProfile(nextProfile) {
+    if (!nextProfile) {
+      return;
+    }
+
+    const country = nextProfile.pais || null;
+    const nextAddress = {
+      ...INITIAL_ADDRESS,
+      apartment: nextProfile.departamento || '',
+      country: country?.nombre || '',
+      countryId: country?.numero ? String(country.numero) : '',
+      locality: nextProfile.localidad || '',
+      number: nextProfile.altura || '',
+      postalCode:
+        profileField(nextProfile, 'codigoPostal', 'codigo_postal') || '',
+      province: nextProfile.ciudad || '',
+      street: nextProfile.direccion || '',
+    };
+    const displayAddressLine = buildAddressSearchValue(nextAddress);
+    const profilePhoto = profileField(
+      nextProfile,
+      'urlFotoPerfil',
+      'url_foto_perfil'
+    );
+    const dniFront = profileField(
+      nextProfile,
+      'urlFotoDocFrente',
+      'url_foto_doc_frente'
+    );
+    const dniBack = profileField(
+      nextProfile,
+      'urlFotoDocDorso',
+      'url_foto_doc_dorso'
+    );
+
+    setAddress({
+      ...nextAddress,
+      addressLine: displayAddressLine,
+      displayAddressLine,
+    });
+    setProfile(nextProfile);
+    setProfileImage(
+      profilePhoto
+        ? {
+            uri: `${resolveApiAssetUrl(profilePhoto)}${
+              String(profilePhoto).includes('?') ? '&' : '?'
+            }v=${Date.now()}`,
+          }
+        : null
+    );
+    setDniFiles(
+      [
+        dniFront
+          ? {
+              id: 'dni-front',
+              name: 'dni-frente.jpg',
+              uri: resolveApiAssetUrl(dniFront),
+            }
+          : null,
+        dniBack
+          ? {
+              id: 'dni-back',
+              name: 'dni-dorso.jpg',
+              uri: resolveApiAssetUrl(dniBack),
+            }
+          : null,
+      ].filter(Boolean)
+    );
+  }
+
+  async function loadData({ showLoader = true } = {}) {
+    if (showLoader) {
+      setLoading(true);
+    }
+    setPageError('');
+
+    try {
+      const [profileResult, paymentResult, countryResult] = await Promise.all([
+        getProfile(),
+        listPaymentMethods(),
+        listCountries(),
+      ]);
+      hydrateProfile(profileResult);
+      setPayments(paymentResult?.datos || []);
+      setCountries(countryResult?.datos || []);
+    } catch (error) {
+      setPageError(
+        getApiErrorMessage(error, 'No pudimos cargar los datos de tu perfil.')
+      );
+    } finally {
+      if (showLoader) {
+        setLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  async function applyProfileImage(asset) {
     if (!asset?.uri) {
       setIsProfileImageMenuOpen(false);
       return;
     }
 
-    setProfileImage({ uri: asset.uri });
+    setSavingSection('profile-image');
+    setPageError('');
     setIsProfileImageMenuOpen(false);
+
+    try {
+      const upload = await toUploadValue(asset, 'foto-perfil.jpg');
+      const formData = new FormData();
+      formData.append('fotoPerfil', upload);
+      const updatedProfile = await updateProfile(formData);
+      hydrateProfile(updatedProfile);
+      showToast('Foto de perfil actualizada.');
+    } catch (error) {
+      setPageError(
+        getApiErrorMessage(error, 'No pudimos actualizar la foto de perfil.')
+      );
+    } finally {
+      setSavingSection('');
+    }
   }
 
   async function pickProfileFromLibrary() {
@@ -623,7 +968,7 @@ export default function ProfileScreen({ onLogout }) {
     });
 
     if (!result.canceled) {
-      applyProfileImage(result.assets?.[0]);
+      await applyProfileImage(result.assets?.[0]);
     }
   }
 
@@ -642,69 +987,137 @@ export default function ProfileScreen({ onLogout }) {
     });
 
     if (!result.canceled) {
-      applyProfileImage(result.assets?.[0]);
-    }
-  }
-
-  async function pickProfileDocument() {
-    const result = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      multiple: false,
-      type: 'image/*',
-    });
-
-    if (!result.canceled) {
-      applyProfileImage(result.assets?.[0]);
-    } else {
-      setIsProfileImageMenuOpen(false);
+      await applyProfileImage(result.assets?.[0]);
     }
   }
 
   function closeModal() {
     setModal(null);
     setEditingPaymentId(null);
+    setPageError('');
   }
 
-  function handleAddressSave(nextAddress) {
-    setAddress(nextAddress);
-    closeModal();
+  async function handleAddressSave(nextAddress) {
+    setSavingSection('address');
+    setPageError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('direccion', nextAddress.street.trim());
+      formData.append('altura', nextAddress.number.trim());
+      formData.append('codigoPostal', nextAddress.postalCode.trim());
+      formData.append('departamento', nextAddress.apartment.trim());
+      formData.append('localidad', nextAddress.locality.trim());
+      formData.append('ciudad', nextAddress.province.trim());
+      formData.append('idPais', String(nextAddress.countryId));
+      const updatedProfile = await updateProfile(formData);
+      const persistedPostalCode = String(
+        profileField(updatedProfile, 'codigoPostal', 'codigo_postal') || ''
+      ).trim();
+
+      if (persistedPostalCode !== nextAddress.postalCode.trim()) {
+        throw new Error(
+          'El servidor no confirmó el código postal. Verificá que la última migración del backend esté aplicada.'
+        );
+      }
+
+      hydrateProfile(updatedProfile);
+      showToast('Domicilio actualizado.');
+      closeModal();
+    } catch (error) {
+      setPageError(
+        getApiErrorMessage(error, 'No pudimos actualizar el domicilio.')
+      );
+    } finally {
+      setSavingSection('');
+    }
   }
 
-  function handlePaymentSave(selectedMethod) {
-    if (!selectedMethod) {
+  async function handleDniSave(nextFiles) {
+    setSavingSection('dni');
+    setPageError('');
+
+    try {
+      const frontFile =
+        nextFiles.find((file) => file.id === 'dni-front') ||
+        nextFiles.find((file) => file.id !== 'dni-back');
+      const backFile =
+        nextFiles.find((file) => file.id === 'dni-back') ||
+        nextFiles.find((file) => file !== frontFile);
+      const formData = new FormData();
+      let hasUpload = false;
+
+      if (frontFile?.uri && !/^https?:\/\//i.test(frontFile.uri)) {
+        formData.append(
+          'fotoDocFrente',
+          await toUploadValue(frontFile, 'dni-frente.jpg')
+        );
+        hasUpload = true;
+      }
+      if (backFile?.uri && !/^https?:\/\//i.test(backFile.uri)) {
+        formData.append(
+          'fotoDocDorso',
+          await toUploadValue(backFile, 'dni-dorso.jpg')
+        );
+        hasUpload = true;
+      }
+
+      if (!hasUpload) {
+        closeModal();
+        return;
+      }
+
+      const updatedProfile = await updateProfile(formData);
+      hydrateProfile(updatedProfile);
+      showToast('Fotos del DNI actualizadas.');
+      closeModal();
+    } catch (error) {
+      setPageError(
+        getApiErrorMessage(error, 'No pudimos actualizar las fotos del DNI.')
+      );
+    } finally {
+      setSavingSection('');
+    }
+  }
+
+  async function handlePaymentSave(result) {
+    if (!result?.payment) {
       closeModal();
       return;
     }
 
-    if (editingPaymentId) {
-      setPayments((currentPayments) =>
-        currentPayments.map((payment) =>
-          payment.id === editingPaymentId
-            ? {
-                ...payment,
-                lines: ['Actualizado recientemente'],
-              }
-            : payment
-        )
-      );
-    } else {
-      setPayments((currentPayments) => [
-        ...currentPayments,
-        {
-          id: `payment-${Date.now()}`,
-          icon: selectedMethod === 'check' ? 'check' : selectedMethod === 'bank' ? 'bank' : 'card',
-          lines: ['Agregado recientemente'],
-          title:
-            selectedMethod === 'check'
-              ? 'Cheque certificado'
-              : selectedMethod === 'bank'
-              ? 'Cuenta Bancaria'
-              : 'Tarjeta de credito',
-        },
-      ]);
-    }
+    setSavingSection('payment');
+    setPageError('');
 
-    closeModal();
+    try {
+      const [paymentResult, profileResult] = await Promise.all([
+        listPaymentMethods(),
+        getProfile(),
+      ]);
+      setPayments(paymentResult?.datos || []);
+      hydrateProfile(profileResult);
+
+      if (result.payment.subioCategoria) {
+        showToast(
+          `Tu categoría subió a ${capitalizeCategory(
+            result.payment.categoriaActual
+          )}.`
+        );
+      }
+
+      showToast(
+        editingPaymentId
+          ? 'Medio de pago actualizado.'
+          : 'Medio de pago agregado.'
+      );
+      closeModal();
+    } catch (error) {
+      setPageError(
+        getApiErrorMessage(error, 'No pudimos actualizar los medios de pago.')
+      );
+    } finally {
+      setSavingSection('');
+    }
   }
 
   function handlePaymentEdit(paymentId) {
@@ -712,20 +1125,61 @@ export default function ProfileScreen({ onLogout }) {
     setModal('payment');
   }
 
-  function handlePaymentDelete(paymentId) {
-    setPayments((currentPayments) =>
-      currentPayments.filter((payment) => payment.id !== paymentId)
+  async function handlePaymentDelete(paymentId) {
+    setSavingSection('payment');
+    setPageError('');
+
+    try {
+      await deletePaymentMethod(paymentId);
+      const paymentResult = await listPaymentMethods();
+      setPayments(paymentResult?.datos || []);
+      showToast('Medio de pago eliminado.');
+    } catch (error) {
+      setPageError(
+        getApiErrorMessage(error, 'No pudimos eliminar el medio de pago.')
+      );
+    } finally {
+      setSavingSection('');
+    }
+  }
+
+  const editingPayment = payments.find(
+    (payment) =>
+      String(payment.identificador) === String(editingPaymentId)
+  );
+  const dniUpdatedAt = profileField(
+    profile,
+    'fechaActualizacionFotoDni',
+    'fecha_actualizacion_foto_dni'
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.loadingState}>
+        <Text style={styles.loadingText}>Cargando perfil...</Text>
+      </View>
     );
   }
 
   return (
     <View style={styles.screen}>
+      {pageError ? <Text style={styles.pageError}>{pageError}</Text> : null}
+
       <View style={styles.profileCard}>
         <View style={styles.avatarWrapper}>
-          <Image source={profileImage} style={styles.avatar} />
+          {profileImage ? (
+            <Image source={profileImage} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              <Text style={styles.avatarInitials}>
+                {getProfileInitials(profile)}
+              </Text>
+            </View>
+          )}
           <Pressable
             accessibilityLabel="Editar foto de perfil"
             accessibilityRole="button"
+            disabled={savingSection === 'profile-image'}
             onPress={() =>
               setIsProfileImageMenuOpen((currentValue) => !currentValue)
             }
@@ -735,34 +1189,39 @@ export default function ProfileScreen({ onLogout }) {
           </Pressable>
           {isProfileImageMenuOpen ? (
             <View style={styles.avatarMenu}>
-              <AvatarMenuOption onPress={openProfileCamera}>
-                Abrir camara
+              <AvatarMenuOption icon={<CameraSmallIcon />} onPress={openProfileCamera}>
+                Abrir cámara
               </AvatarMenuOption>
-              <AvatarMenuOption onPress={pickProfileFromLibrary}>
-                Elegir de fotos
-              </AvatarMenuOption>
-              <AvatarMenuOption onPress={pickProfileDocument}>
-                Subir archivo
+              <AvatarMenuOption
+                icon={<GallerySmallIcon />}
+                onPress={pickProfileFromLibrary}
+              >
+                Subir foto
               </AvatarMenuOption>
             </View>
           ) : null}
         </View>
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>
-            {mockProfile.firstName} {mockProfile.lastName}
+            {profile?.nombre || ''} {profile?.apellido || ''}
           </Text>
-          <Text style={styles.profileEmail}>{mockProfile.email}</Text>
+          <Text style={styles.profileEmail}>{profile?.email || ''}</Text>
           <View style={styles.categoryPill}>
             <CrownIcon />
-            <Text style={styles.categoryText}>Categoría: {mockProfile.category}</Text>
+            <Text style={styles.categoryText}>
+              Categoría: {capitalizeCategory(profile?.categoria)}
+            </Text>
           </View>
+          {savingSection === 'profile-image' ? (
+            <Text style={styles.savingText}>Guardando foto...</Text>
+          ) : null}
         </View>
       </View>
 
       <SectionCard title="Datos personales">
-        <InfoRow label="Nombre" value={mockProfile.firstName} />
-        <InfoRow label="Apellido" value={mockProfile.lastName} />
-        <InfoRow label="Pais" value={address.country} />
+        <InfoRow label="Nombre" value={profile?.nombre || '-'} />
+        <InfoRow label="Apellido" value={profile?.apellido || '-'} />
+        <InfoRow label="País" value={address.country || '-'} />
         <InfoRow
           action={
             <IconButton
@@ -773,7 +1232,7 @@ export default function ProfileScreen({ onLogout }) {
             </IconButton>
           }
           label="Domicilio"
-          value={addressDisplay}
+          value={addressDisplay || '-'}
         />
         <InfoRow
           action={
@@ -785,7 +1244,11 @@ export default function ProfileScreen({ onLogout }) {
             </IconButton>
           }
           label="Fotos DNI"
-          value="Actualizadas: 10/04/26"
+          value={
+            dniUpdatedAt
+              ? `Actualizadas: ${String(dniUpdatedAt).slice(0, 10)}`
+              : 'Sin fecha de actualización'
+          }
         />
       </SectionCard>
 
@@ -801,36 +1264,55 @@ export default function ProfileScreen({ onLogout }) {
         title="Medios de pago"
       >
         <View style={styles.paymentsList}>
-          {payments.map((payment) => (
-            <View key={payment.id} style={styles.paymentRow}>
-              <PaymentTypeIcon type={payment.icon} />
-              <View style={styles.paymentTextBlock}>
-                <Text style={styles.paymentTitle}>{payment.title}</Text>
-                {payment.lines.map((line) => (
-                  <Text key={line} numberOfLines={1} style={styles.paymentLine}>
-                    {line}
-                  </Text>
-                ))}
-              </View>
-              <View style={styles.paymentActions}>
-                <IconButton
-                  accessibilityLabel={`Editar ${payment.title}`}
-                  onPress={() => handlePaymentEdit(payment.id)}
-                >
-                  <EditIcon />
-                </IconButton>
-                <IconButton
-                  accessibilityLabel={`Eliminar ${payment.title}`}
-                  onPress={() => handlePaymentDelete(payment.id)}
-                >
-                  <TrashIcon />
-                </IconButton>
-              </View>
-            </View>
-          ))}
+          {payments.length ? (
+            payments.map((payment) => {
+              const presentation = paymentPresentation(payment);
+              return (
+                <View key={payment.identificador} style={styles.paymentRow}>
+                  <PaymentTypeIcon type={presentation.icon} />
+                  <View style={styles.paymentTextBlock}>
+                    <Text style={styles.paymentTitle}>
+                      {presentation.title}
+                    </Text>
+                    {presentation.lines.map((line) => (
+                      <Text
+                        key={line}
+                        numberOfLines={1}
+                        style={styles.paymentLine}
+                      >
+                        {line}
+                      </Text>
+                    ))}
+                  </View>
+                  <View style={styles.paymentActions}>
+                    <IconButton
+                      accessibilityLabel={`Editar ${presentation.title}`}
+                      onPress={() =>
+                        handlePaymentEdit(payment.identificador)
+                      }
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      accessibilityLabel={`Eliminar ${presentation.title}`}
+                      onPress={() =>
+                        handlePaymentDelete(payment.identificador)
+                      }
+                    >
+                      <TrashIcon />
+                    </IconButton>
+                  </View>
+                </View>
+              );
+            })
+          ) : (
+            <Text style={styles.emptyPayments}>
+              Todavía no agregaste medios de pago.
+            </Text>
+          )}
         </View>
         <Text style={styles.paymentHint}>
-          Necesitas al menos un medio de pago para poder pujar.
+          Necesitás al menos un medio de pago para poder pujar.
         </Text>
       </SectionCard>
 
@@ -854,21 +1336,29 @@ export default function ProfileScreen({ onLogout }) {
 
       <AddressEditModal
         address={address}
+        apiError={pageError}
+        countries={countries}
         onClose={closeModal}
         onSave={handleAddressSave}
+        saving={savingSection === 'address'}
         visible={modal === 'address'}
       />
       <DniEditModal
+        apiError={pageError}
         files={dniFiles}
-        onChange={setDniFiles}
         onClose={closeModal}
+        onSave={handleDniSave}
+        saving={savingSection === 'dni'}
         visible={modal === 'dni'}
       />
-      <PaymentEditModal
-        onClose={closeModal}
-        onSave={handlePaymentSave}
-        visible={modal === 'payment'}
-      />
+      {modal === 'payment' ? (
+        <PaymentEditModal
+          initialPayment={editingPayment}
+          onClose={closeModal}
+          onSave={handlePaymentSave}
+          visible
+        />
+      ) : null}
       <PasswordEditModal
         onClose={closeModal}
         visible={modal === 'password'}
@@ -910,6 +1400,29 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     zIndex: 2,
   },
+  loadingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 360,
+    paddingHorizontal: 38,
+  },
+  loadingText: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.medium,
+    fontSize: 17,
+  },
+  pageError: {
+    backgroundColor: 'rgba(159, 2, 29, 0.08)',
+    borderColor: colors.burgundy,
+    borderRadius: 8,
+    borderWidth: 1,
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 12,
+    padding: 11,
+  },
   profileCard: {
     alignItems: 'center',
     backgroundColor: 'rgba(242, 211, 200, 0.62)',
@@ -930,6 +1443,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: 116,
     width: 116,
+  },
+  avatarFallback: {
+    alignItems: 'center',
+    backgroundColor: colors.burgundy,
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: colors.cream,
+    fontFamily: fonts.bold,
+    fontSize: 38,
   },
   avatarEditButton: {
     alignItems: 'center',
@@ -957,8 +1480,11 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   avatarMenuOption: {
+    alignItems: 'center',
     borderBottomColor: 'rgba(159, 2, 29, 0.12)',
     borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -999,6 +1525,12 @@ const styles = StyleSheet.create({
     color: colors.cocoa,
     fontFamily: fonts.medium,
     fontSize: 14,
+  },
+  savingText: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    marginTop: 6,
   },
   sectionCard: {
     backgroundColor: 'rgba(242, 211, 200, 0.58)',
@@ -1060,6 +1592,14 @@ const styles = StyleSheet.create({
   },
   paymentsList: {
     rowGap: 7,
+  },
+  emptyPayments: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    paddingVertical: 12,
+    textAlign: 'center',
   },
   paymentRow: {
     alignItems: 'center',
@@ -1184,6 +1724,14 @@ const styles = StyleSheet.create({
   modalSubmit: {
     alignItems: 'center',
     marginTop: 24,
+  },
+  modalApiError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 19,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   passwordField: {
     marginBottom: 11,

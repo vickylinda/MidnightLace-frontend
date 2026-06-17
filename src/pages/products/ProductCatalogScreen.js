@@ -270,7 +270,7 @@ function EmptyProductsNotice({ onCreateProduct, onGoHome }) {
       />
 
       <Text style={styles.emptyTitle}>
-        ups! parece que no publicaste ningun producto todavia...
+        ups! parece que no publicaste ningun producto todavía...
       </Text>
       <Text style={styles.emptyMessage}>pero nunca es tarde!</Text>
 

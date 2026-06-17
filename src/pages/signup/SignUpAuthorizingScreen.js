@@ -14,14 +14,22 @@ import { fonts } from '../../theme/fonts';
 
 const AUTH_SECONDS = 5;
 const MAIL_DELAY = 5200;
-const USER_CATEGORIES = ['común', 'especial', 'plata', 'oro', 'platino'];
+function formatCategory(value) {
+  const category = String(value || 'comun').toLowerCase();
+  const labels = {
+    comun: 'comun',
+    especial: 'especial',
+    plata: 'plata',
+    oro: 'oro',
+    platino: 'platino',
+  };
+  return labels[category] || category;
+}
 
-export default function SignUpAuthorizingScreen({ onAuthorized }) {
+export default function SignUpAuthorizingScreen({ category, onAuthorized }) {
   const [remainingSeconds, setRemainingSeconds] = useState(AUTH_SECONDS);
   const [phase, setPhase] = useState('authorizing');
-  const [assignedCategory] = useState(
-    () => USER_CATEGORIES[Math.floor(Math.random() * USER_CATEGORIES.length)]
-  );
+  const assignedCategory = formatCategory(category);
   const categoryScale = useRef(new Animated.Value(0.9)).current;
   const categoryOpacity = useRef(new Animated.Value(0)).current;
 
