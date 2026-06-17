@@ -234,6 +234,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
       formData.append('nombreUsuario', username);
       formData.append('direccion', address.street);
       formData.append('altura', address.number);
+      formData.append('codigoPostal', address.postalCode);
       formData.append('localidad', address.locality);
       formData.append('ciudad', address.province);
       formData.append('idPais', String(selectedCountryId));
@@ -264,7 +265,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         return;
       }
 
-      onSubmitSuccess?.({ email });
+      onSubmitSuccess?.({ email, categoria: result.categoria });
     } catch (error) {
       setApiError(getApiErrorMessage(error, 'No pudimos completar el registro.'));
     } finally {
