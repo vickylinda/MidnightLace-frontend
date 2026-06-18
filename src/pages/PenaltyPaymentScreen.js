@@ -1,32 +1,10 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { apiFetch, getApiErrorMessage } from '../utils/http';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
-
-const paymentMethods = [
-  {
-    detail: 'Venc. 06/2028',
-    id: 'visa',
-    label: 'Tarjeta Visa **** 4242',
-  },
-  {
-    detail: 'Banco Nacion',
-    id: 'bank',
-    label: 'Cuenta corriente **** 1567',
-  },
-  {
-    detail: 'Venc. 11/2027',
-    id: 'mastercard',
-    label: 'Tarjeta Mastercard **** 8821',
-  },
-  {
-    detail: 'Disponible: $50.000',
-    id: 'check',
-    label: 'Cheque certificado',
-  },
-];
 
 function WarningIcon() {
   return (
@@ -122,8 +100,81 @@ function RadioButton({ isSelected }) {
   );
 }
 
-export default function PenaltyPaymentScreen({ onPaid }) {
-  const [selectedMethod, setSelectedMethod] = useState('visa');
+function buildMethodLabel(m) {
+  if (m.tipo === 'tarjetaCredito') {
+    const red = m.detalle?.red || 'Tarjeta';
+    const digits = m.detalle?.ultimosCuatroDigitos || '????';
+    return `${red} **** ${digits}`;
+  }
+  if (m.tipo === 'cuentaBancaria') {
+    const banco = m.detalle?.nombreBanco || 'Banco';
+    const cuenta = String(m.detalle?.numeroCuenta || '');
+    const last4 = cuenta.length >= 4 ? cuenta.slice(-4) : cuenta || '????';
+    return `${banco} **** ${last4}`;
+  }
+  return 'Cheque certificado';
+}
+
+function buildMethodDetail(m) {
+  if (m.tipo === 'tarjetaCredito' && m.detalle?.fechaVencimiento) {
+    const parts = String(m.detalle.fechaVencimiento).split('-');
+    return parts.length >= 2 ? `Venc. ${parts[1]}/${parts[0]}` : '';
+  }
+  if (m.tipo === 'cuentaBancaria') {
+    return m.detalle?.nombreBanco || '';
+  }
+  if (m.tipo === 'chequeCertificado' && m.detalle?.montoDisponible != null) {
+    return `Disponible: $${Number(m.detalle.montoDisponible).toLocaleString('es-AR')}`;
+  }
+  return '';
+}
+
+export default function PenaltyPaymentScreen({ multa, onPaid }) {
+  const [methods, setMethods] = useState([]);
+  const [loadingMethods, setLoadingMethods] = useState(true);
+  const [methodsError, setMethodsError] = useState('');
+  const [selectedMethod, setSelectedMethod] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+
+  async function loadMethods() {
+    setLoadingMethods(true);
+    setMethodsError('');
+    try {
+      const res = await apiFetch('/v1/medios-de-pago');
+      const all = res.datos || res || [];
+      const valid = all.filter((m) => m.verificado === 'si' && m.activo === 'si');
+      setMethods(valid);
+      if (valid.length > 0) setSelectedMethod(valid[0].identificador);
+    } catch (err) {
+      setMethodsError(getApiErrorMessage(err, 'No se pudieron cargar los medios de pago.'));
+    } finally {
+      setLoadingMethods(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMethods();
+  }, []);
+
+  async function handlePay() {
+    if (!selectedMethod || !multa?.identificador) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await apiFetch(`/v1/mi/multas/${multa.identificador}/pagar`, {
+        method: 'POST',
+        body: { idMedioDePago: selectedMethod },
+      });
+      onPaid?.();
+    } catch (err) {
+      setSubmitError(getApiErrorMessage(err, 'No se pudo procesar el pago.'));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const canPay = selectedMethod !== null && !submitting;
 
   return (
     <View style={styles.screen}>
@@ -143,39 +194,60 @@ export default function PenaltyPaymentScreen({ onPaid }) {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Detalle de la multa</Text>
         <View style={styles.divider} />
-        <DetailRow label="Subasta" type="auction" value="Gothic Night" />
-        <DetailRow label="Fecha" type="calendar" value="22/08/2026 · 20:00h" />
-        <DetailRow label="Monto ofertado" type="money" value="$32.500" />
+        <DetailRow label="Subasta" type="auction" value={multa?.auction || '-'} />
+        <DetailRow label="Fecha" type="calendar" value={multa?.date || '-'} />
+        {multa?.amount && multa.amount !== '-' ? (
+          <DetailRow label="Monto ofertado" type="money" value={multa.amount} />
+        ) : null}
         <DetailRow
           label="Multa aplicada (10%)"
           type="percent"
-          value="$3.250"
+          value={multa?.penalty || '-'}
           valueDanger
         />
       </View>
 
       <View style={styles.totalRow}>
         <Text style={styles.totalLabel}>Total a pagar</Text>
-        <Text style={styles.totalAmount}>$3.250</Text>
+        <Text style={styles.totalAmount}>{multa?.penalty || '-'}</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Elegi un medio de pago</Text>
+        <Text style={styles.cardTitle}>Elegí un medio de pago</Text>
         <View style={styles.divider} />
-        {paymentMethods.map((method) => (
-          <Pressable
-            key={method.id}
-            onPress={() => setSelectedMethod(method.id)}
-            style={styles.paymentOption}
-          >
-            <RadioButton isSelected={selectedMethod === method.id} />
-            <View style={styles.paymentTextBlock}>
-              <Text style={styles.paymentLabel}>{method.label}</Text>
-              <Text style={styles.paymentDetail}>{method.detail}</Text>
-            </View>
-          </Pressable>
-        ))}
+        {loadingMethods ? (
+          <ActivityIndicator color={colors.burgundy} size="small" style={styles.loader} />
+        ) : methodsError ? (
+          <View style={styles.methodError}>
+            <Text style={styles.methodErrorText}>{methodsError}</Text>
+            <Pressable onPress={loadMethods} style={styles.retryButton}>
+              <Text style={styles.retryButtonText}>Reintentar</Text>
+            </Pressable>
+          </View>
+        ) : methods.length === 0 ? (
+          <Text style={styles.emptyMethods}>
+            No tenés medios de pago verificados. Agregá uno desde tu perfil.
+          </Text>
+        ) : (
+          methods.map((m) => (
+            <Pressable
+              key={m.identificador}
+              onPress={() => setSelectedMethod(m.identificador)}
+              style={styles.paymentOption}
+            >
+              <RadioButton isSelected={selectedMethod === m.identificador} />
+              <View style={styles.paymentTextBlock}>
+                <Text style={styles.paymentLabel}>{buildMethodLabel(m)}</Text>
+                <Text style={styles.paymentDetail}>{buildMethodDetail(m)}</Text>
+              </View>
+            </Pressable>
+          ))
+        )}
       </View>
+
+      {submitError ? (
+        <Text style={styles.submitError}>{submitError}</Text>
+      ) : null}
 
       <View style={styles.payNotice}>
         <InfoIcon />
@@ -187,12 +259,14 @@ export default function PenaltyPaymentScreen({ onPaid }) {
       <View style={styles.submit}>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: !selectedMethod }}
-          disabled={!selectedMethod}
-          onPress={onPaid}
-          style={[styles.payButton, !selectedMethod ? styles.payButtonDisabled : null]}
+          accessibilityState={{ disabled: !canPay }}
+          disabled={!canPay}
+          onPress={handlePay}
+          style={[styles.payButton, !canPay ? styles.payButtonDisabled : null]}
         >
-          <Text style={styles.payButtonText}>Pagar $3.250</Text>
+          <Text style={styles.payButtonText}>
+            {submitting ? 'Procesando...' : `Pagar ${multa?.penalty || ''}`}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -311,6 +385,41 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 14,
   },
+  loader: {
+    marginVertical: 12,
+  },
+  methodError: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    rowGap: 8,
+  },
+  methodErrorText: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  retryButton: {
+    borderColor: colors.burgundy,
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+  },
+  retryButtonText: {
+    color: colors.burgundy,
+    fontFamily: fonts.medium,
+    fontSize: 13,
+  },
+  emptyMethods: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 17,
+    paddingVertical: 8,
+    textAlign: 'center',
+  },
   paymentOption: {
     alignItems: 'center',
     columnGap: 10,
@@ -350,6 +459,14 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 11,
     lineHeight: 14,
+  },
+  submitError: {
+    color: colors.burgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 17,
+    marginBottom: 10,
+    textAlign: 'center',
   },
   payNotice: {
     alignItems: 'center',

@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import { Platform } from 'react-native';
 
-import { loadSession } from '../utils/session';
+import { hasRole, loadSession } from '../utils/session';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AuctionDetailScreen from '../pages/AuctionDetailScreen';
 import AllAuctionsScreen from '../pages/AllAuctionsScreen';
+import CreateAuctionScreen from '../pages/CreateAuctionScreen';
 import CreateProductScreen from '../pages/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
 import HomeScreen from '../pages/HomeScreen';
@@ -27,6 +28,7 @@ import SplashScreen from '../pages/SplashScreen';
 const ROUTES = {
   auctionDetail: 'auctionDetail',
   auctions: 'auctions',
+  createAuction: 'createAuction',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
   home: 'home',
@@ -47,6 +49,7 @@ const ROUTES = {
 const ROUTE_PATHS = {
   [ROUTES.auctionDetail]: '/subasta',
   [ROUTES.auctions]: '/auctions',
+  [ROUTES.createAuction]: '/auctions/new',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
   [ROUTES.home]: '/home',
@@ -111,6 +114,7 @@ export default function AppNavigator() {
   const [verificationCode, setVerificationCode] = useState('');
   const [selectedAuction, setSelectedAuction] = useState(null);
 
+  const [selectedPenalty, setSelectedPenalty] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({
     GreatVibes_400Regular: require('@expo-google-fonts/great-vibes/400Regular/GreatVibes_400Regular.ttf'),
@@ -186,6 +190,12 @@ export default function AppNavigator() {
     }
   }, [currentRoute, selectedAuction]);
 
+  useEffect(() => {
+    if (currentRoute !== ROUTES.penaltyPayment && selectedPenalty) {
+      setSelectedPenalty(null);
+    }
+  }, [currentRoute, selectedPenalty]);
+
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
       return;
@@ -230,6 +240,10 @@ export default function AppNavigator() {
 
     if (route === ROUTES.penaltyPayment) {
       return ROUTES.myActivity;
+    }
+
+    if (route === ROUTES.createAuction) {
+      return ROUTES.auctions;
     }
 
     if (route === ROUTES.createProduct) {
@@ -324,6 +338,8 @@ export default function AppNavigator() {
           ? 'subastas'
           : currentRoute === ROUTES.auctionDetail
           ? 'subastas'
+          : currentRoute === ROUTES.createAuction
+          ? 'subastas'
           : currentRoute === ROUTES.createProduct
           ? 'subastas'
           : currentRoute === ROUTES.productCatalog
@@ -339,9 +355,10 @@ export default function AppNavigator() {
       }
       enableSwipeBack={canNavigateBack}
       floatingAction={
-        currentRoute === ROUTES.auctions ? (
+        currentRoute === ROUTES.auctions || currentRoute === ROUTES.createAuction ? (
           <AuctionSpeedDial
-            onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+            onCreateAuction={hasRole('subastador') ? () => navigateTo(ROUTES.createAuction) : undefined}
+            onCreateProduct={!hasRole('subastador') ? () => navigateTo(ROUTES.createProduct) : undefined}
           />
         ) : null
       }
@@ -354,7 +371,9 @@ export default function AppNavigator() {
       {currentRoute === ROUTES.auctionDetail ? (
         selectedAuction ? <AuctionDetailScreen /> : null
       ) : currentRoute === ROUTES.auctions ? (
-        <AllAuctionsScreen onAuctionPress={handleAuctionPress} />
+        <AllAuctionsScreen isSubastador={hasRole('subastador')} onAuctionPress={handleAuctionPress} />
+      ) : currentRoute === ROUTES.createAuction ? (
+        <CreateAuctionScreen onSubmitSuccess={() => navigateTo(ROUTES.auctions)} />
       ) : currentRoute === ROUTES.createProduct ? (
         <CreateProductScreen
           onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
@@ -367,9 +386,9 @@ export default function AppNavigator() {
           onViewAllAuctions={() => navigateTo(ROUTES.auctions)}
         />
       ) : currentRoute === ROUTES.myActivity ? (
-        <MyActivityScreen onPayPenalty={() => navigateTo(ROUTES.penaltyPayment)} />
+        <MyActivityScreen onPayPenalty={(multa) => { setSelectedPenalty(multa); navigateTo(ROUTES.penaltyPayment); }} />
       ) : currentRoute === ROUTES.penaltyPayment ? (
-        <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
+        <PenaltyPaymentScreen multa={selectedPenalty} onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => {
           import('../utils/session').then(({ clearSession }) => clearSession());

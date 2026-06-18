@@ -37,35 +37,63 @@ function ProductIcon() {
   );
 }
 
-export default function AuctionSpeedDial({ onCreateProduct }) {
+function AuctionIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9 7L15 13M7 9L13 15M6 10L10 6L16 12L12 16L6 10ZM14 15L20 21"
+        stroke={colors.burgundy}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={1.8}
+      />
+    </Svg>
+  );
+}
+
+export default function AuctionSpeedDial({ onCreateAuction, onCreateProduct }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  function handleCreateProduct() {
+  function handleOption(callback) {
     setIsOpen(false);
-    onCreateProduct?.();
+    callback?.();
   }
 
   return (
     <View style={styles.wrapper} pointerEvents="box-none">
       {isOpen ? (
         <View style={styles.options}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleCreateProduct}
-            style={styles.option}
-          >
-            <Text style={styles.optionText}>Crear producto</Text>
-            <View style={styles.optionIcon}>
-              <ProductIcon />
-            </View>
-          </Pressable>
+          {onCreateAuction ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOption(onCreateAuction)}
+              style={styles.option}
+            >
+              <Text style={styles.optionText}>Crear subasta</Text>
+              <View style={styles.optionIcon}>
+                <AuctionIcon />
+              </View>
+            </Pressable>
+          ) : null}
+          {onCreateProduct ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOption(onCreateProduct)}
+              style={styles.option}
+            >
+              <Text style={styles.optionText}>Crear producto</Text>
+              <View style={styles.optionIcon}>
+                <ProductIcon />
+              </View>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
       <Pressable
         accessibilityLabel={isOpen ? 'Cerrar acciones' : 'Abrir acciones'}
         accessibilityRole="button"
-        onPress={() => setIsOpen((currentValue) => !currentValue)}
+        onPress={() => setIsOpen((v) => !v)}
         style={styles.mainButton}
       >
         <PlusIcon isOpen={isOpen} />
