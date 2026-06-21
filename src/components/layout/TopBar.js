@@ -27,6 +27,7 @@ const TYPE_TITLES = {
   multa_generada: 'Multa pendiente',
   multa_pagada: 'Multa pagada',
   producto_aceptado: 'Producto aceptado',
+  producto_en_subasta: 'Producto en subasta',
   producto_rechazado: 'Producto rechazado',
   producto_vendido: 'Producto vendido',
   producto_no_vendido: 'Producto no vendido',
@@ -44,7 +45,9 @@ const TYPE_TEXTS = {
     `Tenés una multa pendiente${d?.importe ? ` de $${d.importe}` : ''}. Debe abonarse para participar en nuevas subastas.`,
   multa_pagada: () => 'Tu multa fue pagada exitosamente.',
   producto_aceptado: () =>
-    'Tu producto fue aceptado y asignado a una subasta. Revisá las condiciones en tu catálogo.',
+    'Tu producto fue aceptado. Revisá las condiciones en tu catálogo y confirmá tu participación.',
+  producto_en_subasta: () =>
+    'Confirmaste las condiciones. Tu producto ya está activo en la subasta.',
   producto_rechazado: (d) =>
     `Tu producto fue rechazado.${d?.motivo ? ` Motivo: ${d.motivo}.` : ''}`,
   producto_vendido: () => 'Tu producto fue vendido exitosamente.',

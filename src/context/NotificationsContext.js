@@ -16,7 +16,9 @@ export function NotificationsProvider({ children }) {
     try {
       const data = await apiFetch('/v1/mi/notificaciones?cantidad=50');
       setNotifications(data.datos ?? []);
-    } catch {}
+    } catch (e) {
+      console.error('[notifications] refetch failed:', e?.message ?? e);
+    }
   }
 
   async function markAsRead(id) {
@@ -41,7 +43,7 @@ export function NotificationsProvider({ children }) {
   function disconnect() {
     socketRef.current?.close();
     socketRef.current = null;
-    setNotificaciones([]);
+    setNotifications([]);
   }
 
   return (

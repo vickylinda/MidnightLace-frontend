@@ -122,11 +122,13 @@ export default function AppNavigator() {
   const [selectedAuction, setSelectedAuction] = useState(null);
   const [selectedAuctionProduct, setSelectedAuctionProduct] = useState(null);
 
-  const { connect, disconnect } = useNotifications();
+  const { connect, disconnect, refetch } = useNotifications();
   const connectRef = useRef(connect);
   const disconnectRef = useRef(disconnect);
+  const refetchRef = useRef(refetch);
   connectRef.current = connect;
   disconnectRef.current = disconnect;
+  refetchRef.current = refetch;
 
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({
@@ -170,7 +172,7 @@ export default function AppNavigator() {
           ? session ? ROUTES.home : ROUTES.login
           : prev
       );
-      if (session) connectRef.current();
+      if (session) { connectRef.current(); refetchRef.current(); }
     }
 
     init();
@@ -506,7 +508,7 @@ export default function AppNavigator() {
       ) : (
         <LoginScreen
           onForgotPasswordPress={() => navigateTo(ROUTES.forgotPassword)}
-          onLoginSuccess={() => { connect(); navigateTo(ROUTES.home); }}
+          onLoginSuccess={() => { connect(); navigateTo(ROUTES.home); refetch(); }}
           onRegisterPress={() => navigateTo(ROUTES.signUp)}
         />
       )}

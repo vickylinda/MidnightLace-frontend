@@ -163,7 +163,7 @@ function mapProduct(producto) {
   };
 }
 
-function ProductDetailsModal({ product, onClose }) {
+function ProductDetailsModal({ product, onClose, onReviewConditions }) {
   const { width } = useWindowDimensions();
 
   if (!product) {
@@ -253,6 +253,11 @@ function ProductDetailsModal({ product, onClose }) {
                 <Text style={styles.modalDescriptionTitle}>Descripcion</Text>
                 <Text style={styles.modalDescription}>{product.description}</Text>
               </View>
+            ) : null}
+            {onReviewConditions ? (
+              <PrimaryButton onPress={onReviewConditions} style={styles.modalReviewButton}>
+                Revisar condiciones
+              </PrimaryButton>
             ) : null}
           </ScrollView>
         </View>
@@ -434,20 +439,21 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
       ) : (
         <View style={styles.list}>
           {products.map((product) => (
-            <View key={product.id} style={styles.productWrapper}>
-              <ProductStatusCard
-                {...product}
-                onPress={() => setSelectedProduct(product)}
-              />
-              {product.status === 'confirming' ? (
-                <PrimaryButton
-                  onPress={() => openConditions(product)}
-                  style={styles.reviewButton}
-                >
-                  Revisar condiciones
-                </PrimaryButton>
-              ) : null}
-            </View>
+            <ProductStatusCard
+              key={product.id}
+              {...product}
+              onPress={() => setSelectedProduct(product)}
+              action={
+                product.status === 'confirming' ? (
+                  <PrimaryButton
+                    onPress={() => openConditions(product)}
+                    style={styles.reviewButton}
+                  >
+                    Revisar condiciones
+                  </PrimaryButton>
+                ) : null
+              }
+            />
           ))}
         </View>
       )}
@@ -455,6 +461,10 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
       <ProductDetailsModal
         onClose={() => setSelectedProduct(null)}
         product={selectedProduct}
+        onReviewConditions={selectedProduct?.status === 'confirming' ? () => {
+          setSelectedProduct(null);
+          openConditions(selectedProduct);
+        } : undefined}
       />
 
       <ConditionsModal
@@ -707,15 +717,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 25,
   },
-  productWrapper: {
-    alignItems: 'center',
-    rowGap: 8,
+  modalReviewButton: {
+    marginTop: 16,
     width: '100%',
   },
   reviewButton: {
     height: 42,
     width: '100%',
-    maxWidth: 370,
   },
   conditionsSpinner: {
     marginVertical: 24,
