@@ -148,10 +148,12 @@ function mapProduct(producto) {
     typeof ownerValue === 'string'
       ? ownerValue
       : ownerValue?.username ?? ownerValue?.nombreUsuario ?? ownerValue?.nombre ?? null;
+  const rawId = producto.identificador ?? null;
 
   return {
     description,
-    id: String(producto.identificador ?? producto.id ?? title),
+    id: String(rawId ?? producto.id ?? title),
+    rawId,
     imageSource,
     imageSources,
     owner,
@@ -286,11 +288,80 @@ function EmptyProductsNotice({ onCreateProduct, onGoHome }) {
   );
 }
 
+function ConditionsModal({ state, onAccept, onReject, onClose }) {
+  const { product, data, loading: cLoading, error: cError, submitting } = state;
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent
+      visible={Boolean(product)}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Condiciones de subasta</Text>
+            <Pressable
+              accessibilityLabel="Cerrar"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={styles.modalCloseButton}
+            >
+              <CloseIcon />
+            </Pressable>
+          </View>
+
+          {cLoading ? (
+            <ActivityIndicator color={colors.burgundy} style={styles.conditionsSpinner} />
+          ) : cError ? (
+            <Text style={styles.error}>{cError}</Text>
+          ) : data ? (
+            <>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Precio base:</Text>
+                <Text style={styles.conditionValue}>${data.precioBase}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Comisión:</Text>
+                <Text style={styles.conditionValue}>${data.comision}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Fecha:</Text>
+                <Text style={styles.conditionValue}>{data.fecha ?? '—'}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Hora:</Text>
+                <Text style={styles.conditionValue}>{data.hora ?? '—'}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Lugar:</Text>
+                <Text style={styles.conditionValue}>{data.lugar ?? '—'}</Text>
+              </View>
+              <View style={styles.conditionActions}>
+                <PrimaryButton onPress={onAccept} disabled={submitting} style={styles.conditionAccept}>
+                  Aceptar
+                </PrimaryButton>
+                <PrimaryButton onPress={onReject} disabled={submitting} style={styles.conditionReject}>
+                  Rechazar
+                </PrimaryButton>
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const EMPTY_CONDITIONS = { product: null, data: null, loading: false, error: null, submitting: false };
+
 export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [conditionsState, setConditionsState] = useState(EMPTY_CONDITIONS);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -316,6 +387,34 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
     fetchProducts();
   }, [fetchProducts]);
 
+  async function openConditions(product) {
+    setConditionsState({ product, data: null, loading: true, error: null, submitting: false });
+    try {
+      const data = await apiFetch(`/v1/productos/${product.rawId}/condiciones`);
+      setConditionsState((s) => ({ ...s, data, loading: false }));
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'No pudimos cargar las condiciones.');
+      setConditionsState((s) => ({ ...s, error: msg, loading: false }));
+    }
+  }
+
+  async function submitConditions(accepts) {
+    const { product } = conditionsState;
+    if (!product) return;
+    setConditionsState((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await apiFetch(`/v1/productos/${product.rawId}/aceptar-condiciones`, {
+        method: 'PATCH',
+        body: { acepta: accepts },
+      });
+      setConditionsState(EMPTY_CONDITIONS);
+      fetchProducts();
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'No pudimos procesar tu respuesta.');
+      setConditionsState((s) => ({ ...s, submitting: false, error: msg }));
+    }
+  }
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Estado de los productos</Text>
@@ -335,11 +434,20 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
       ) : (
         <View style={styles.list}>
           {products.map((product) => (
-            <ProductStatusCard
-              key={product.id}
-              {...product}
-              onPress={() => setSelectedProduct(product)}
-            />
+            <View key={product.id} style={styles.productWrapper}>
+              <ProductStatusCard
+                {...product}
+                onPress={() => setSelectedProduct(product)}
+              />
+              {product.status === 'confirming' ? (
+                <PrimaryButton
+                  onPress={() => openConditions(product)}
+                  style={styles.reviewButton}
+                >
+                  Revisar condiciones
+                </PrimaryButton>
+              ) : null}
+            </View>
           ))}
         </View>
       )}
@@ -347,6 +455,13 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
       <ProductDetailsModal
         onClose={() => setSelectedProduct(null)}
         product={selectedProduct}
+      />
+
+      <ConditionsModal
+        state={conditionsState}
+        onAccept={() => submitConditions(true)}
+        onReject={() => submitConditions(false)}
+        onClose={() => setConditionsState(EMPTY_CONDITIONS)}
       />
     </View>
   );
@@ -591,5 +706,50 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 20,
     lineHeight: 25,
+  },
+  productWrapper: {
+    alignItems: 'center',
+    rowGap: 8,
+    width: '100%',
+  },
+  reviewButton: {
+    height: 42,
+    width: '100%',
+    maxWidth: 370,
+  },
+  conditionsSpinner: {
+    marginVertical: 24,
+  },
+  conditionRow: {
+    alignItems: 'center',
+    columnGap: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  conditionLabel: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  conditionValue: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  conditionActions: {
+    flexDirection: 'row',
+    columnGap: 12,
+    justifyContent: 'center',
+    marginTop: 22,
+  },
+  conditionAccept: {
+    width: 128,
+  },
+  conditionReject: {
+    backgroundColor: colors.mutedRose,
+    width: 128,
   },
 });
