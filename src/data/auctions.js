@@ -1,5 +1,6 @@
 export const auctions = [
   {
+    identificador: 1,
     category: 'Especial',
     dateTime: '20/04/2026 - 18:30h',
     description:
@@ -34,6 +35,7 @@ export const auctions = [
     title: 'Gyaru Deluxe',
   },
   {
+    identificador: 2,
     category: 'Especial',
     dateTime: '20/04/2026 - 21:00h',
     description:
@@ -68,6 +70,7 @@ export const auctions = [
     title: 'Y2K Reloaded',
   },
   {
+    identificador: 3,
     category: 'Plata',
     dateTime: '20/04/2026 - 17:00h',
     description:
@@ -102,6 +105,7 @@ export const auctions = [
     title: 'Sweet Dreams',
   },
   {
+    identificador: 4,
     category: 'Oro',
     dateTime: '20/04/2026 - 20:00h',
     description:
@@ -136,6 +140,7 @@ export const auctions = [
     title: 'Gothic Night',
   },
   {
+    identificador: 5,
     category: 'Oro',
     dateTime: '20/04/2026 - 19:30h',
     description:
@@ -170,6 +175,7 @@ export const auctions = [
     title: 'Strawberry Bloom',
   },
   {
+    identificador: 6,
     category: 'Platino',
     dateTime: '20/04/2026 - 21:00h',
     description:
@@ -204,6 +210,7 @@ export const auctions = [
     title: 'Visual Eclipse',
   },
   {
+    identificador: 7,
     category: 'Comun',
     dateTime: '02/09/2026 - 19:00h',
     description:
@@ -238,6 +245,7 @@ export const auctions = [
     title: 'Ganguro Fever',
   },
   {
+    identificador: 8,
     category: 'Plata',
     dateTime: '05/04/2026 - 16:30h',
     description:

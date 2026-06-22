@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -8,55 +10,20 @@ import {
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import {
+  getAuctionCatalog,
+  getAuctionDetails,
+} from '../../services/auctionsApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
-
-const referenceLots = [
-  {
-    code: 'PUIFT-017-BLACK&PINK-FREESIZE',
-    imageSource: require('../../assets/subasta/subasta-lot-01.jpg'),
-    openingBid: '10 USD',
-    title:
-      'Clearance - Black & Pink Polka-dot Pattern Bowknot Gyaru Fashion Beret',
-  },
-  {
-    code: 'LLGU-001',
-    imageSource: require('../../assets/subasta/subasta-lot-02.jpg'),
-    openingBid: '35 USD',
-    title: 'Pink/Gold Gyaru Fashion Platform High 12.7cm Heel Shoes',
-  },
-  {
-    code: 'LCHYY-118',
-    imageSource: require('../../assets/subasta/subasta-lot-03.jpg'),
-    openingBid: '5 USD',
-    title:
-      'Hime Gyaru Leopard Print Pink/Rose Red Mini Hat with Opulent Rose & Ruffled Lace Trim',
-  },
-  {
-    code: 'SEHGT-004',
-    imageSource: require('../../assets/subasta/subasta-lot-04.jpg'),
-    openingBid: '42 USD',
-    title: 'Gyaru Fashion Leopard Pattern Tote Bag with Big Bows',
-  },
-  {
-    code: 'PUIFT-002',
-    imageSource: require('../../assets/subasta/subasta-lot-05.jpg'),
-    openingBid: '15 USD',
-    title: 'Pink & White/Pink & Brown Kitty Design Floral Gyaru Fashion Visor Cap',
-  },
-  {
-    code: 'BNTSW-024',
-    imageSource: require('../../assets/subasta/subasta-lot-06.jpg'),
-    openingBid: '48 USD',
-    title:
-      'Hime Gyaru Purple Leopard Print Tiered Skirt with Ruffle Trim and Chain Accent',
-  },
-];
+import { resolveApiAssetUrl } from '../../utils/config';
 
 const referenceColors = {
   card: '#F6E3D1',
   text: '#510310',
 };
+
+const CATALOG_PAGE_SIZE = 6;
 
 function LocationPinIcon({ size = 31 }) {
   return (
@@ -69,48 +36,186 @@ function LocationPinIcon({ size = 31 }) {
   );
 }
 
-function ProductLotCard({ imageSize, lot, onPress }) {
+function formatPrice(value, currency) {
+  if (value === undefined || value === null || value === '') {
+    return '-';
+  }
+
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return value ?? '-';
+  }
+
+  const formattedAmount = new Intl.NumberFormat('es-AR', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(amount);
+
+  return currency ? `${formattedAmount} ${currency}` : formattedAmount;
+}
+
+function getAuctionStartDate(dateValue, timeValue) {
+  if (!dateValue || !timeValue) {
+    return null;
+  }
+
+  const [year, month, day] = String(dateValue).split('-').map(Number);
+  const [hours, minutes, seconds = 0] = String(timeValue)
+    .split(':')
+    .map(Number);
+  const dateParts = [year, month, day, hours, minutes, seconds];
+
+  if (!dateParts.every(Number.isFinite)) {
+    return null;
+  }
+
+  const startDate = new Date(
+    year,
+    month - 1,
+    day,
+    hours,
+    minutes,
+    seconds
+  );
+
+  if (
+    startDate.getFullYear() !== year ||
+    startDate.getMonth() !== month - 1 ||
+    startDate.getDate() !== day ||
+    startDate.getHours() !== hours ||
+    startDate.getMinutes() !== minutes
+  ) {
+    return null;
+  }
+
+  return startDate;
+}
+
+function formatTimeRemaining(dateValue, timeValue, now) {
+  const startDate = getAuctionStartDate(dateValue, timeValue);
+
+  if (!startDate) {
+    return null;
+  }
+
+  const totalMinutes = Math.max(
+    0,
+    Math.ceil((startDate.getTime() - now) / 60000)
+  );
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  return {
+    days,
+    hours,
+    minutes,
+  };
+}
+
+function getFirstPhotoSource(lot) {
+  const firstPhoto = Array.isArray(lot.fotos) ? lot.fotos[0] : null;
+  const photoPath =
+    typeof firstPhoto === 'string'
+      ? firstPhoto
+      : firstPhoto?.foto ?? firstPhoto?.url ?? firstPhoto?.uri;
+
+  return photoPath ? { uri: resolveApiAssetUrl(photoPath) } : null;
+}
+
+function hasMoreCatalogPages(catalog) {
+  const meta = catalog?.meta ?? {};
+  const currentPage = Number(meta.pagina ?? meta.page ?? 1);
+  const pageSize = Number(
+    meta.cantidad ?? meta.pageSize ?? CATALOG_PAGE_SIZE
+  );
+  const total = Number(meta.total ?? catalog?.total);
+  const totalPages = Number(
+    meta.total_paginas ?? meta.totalPaginas ?? meta.totalPages
+  );
+
+  if (
+    Number.isFinite(currentPage) &&
+    Number.isFinite(pageSize) &&
+    Number.isFinite(total)
+  ) {
+    return currentPage * pageSize < total;
+  }
+
+  if (
+    Number.isFinite(currentPage) &&
+    Number.isFinite(totalPages) &&
+    currentPage < totalPages
+  ) {
+    return true;
+  }
+
+  return (
+    Array.isArray(catalog?.items) &&
+    catalog.items.length === CATALOG_PAGE_SIZE
+  );
+}
+
+function ProductLotCard({ currency, imageSize, lot, onPress }) {
+  const identifier = lot.identificador ?? lot.idProducto;
+  const imageSource = getFirstPhotoSource(lot);
+  const status = lot.estado || 'Sin estado';
+  const title = lot.descripcionCatalogo
+    ? `${lot.titulo || 'Producto sin titulo'} - ${lot.descripcionCatalogo}`
+    : lot.titulo || 'Producto sin titulo';
+
   return (
     <Pressable
-      accessibilityLabel={`Ver producto ${lot.title}`}
+      accessibilityLabel={`Ver producto ${title}`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
         styles.productCard,
-        { minHeight: imageSize },
         pressed ? styles.productCardPressed : null,
       ]}
     >
-      <Image
-        resizeMode="cover"
-        source={lot.imageSource}
-        style={[
-          styles.productImage,
-          {
-            height: imageSize,
-            width: imageSize,
-          },
-        ]}
-      />
+      {imageSource ? (
+        <Image
+          accessibilityLabel={`Foto de ${lot.titulo || 'producto'}`}
+          resizeMode="cover"
+          source={imageSource}
+          style={[styles.productImage, { height: imageSize, width: imageSize }]}
+        />
+      ) : (
+        <View
+          style={[
+            styles.productImage,
+            styles.productImageFallback,
+            { height: imageSize, width: imageSize },
+          ]}
+        >
+          <Text style={styles.productImageFallbackText}>Sin foto</Text>
+        </View>
+      )}
 
       <View style={styles.productBody}>
         <View>
           <Text numberOfLines={1} style={styles.productCode}>
-            {lot.code}
+            ID #{identifier ?? '-'}
           </Text>
           <Text numberOfLines={4} style={styles.productTitle}>
-            {lot.title}
+            {title}
           </Text>
         </View>
 
         <View style={styles.productFooter}>
           <View style={styles.priceBlock}>
-            <Text style={styles.priceLabel}>Oferta inicial</Text>
-            <Text style={styles.priceValue}>{lot.openingBid}</Text>
+            <Text style={styles.priceLabel}>Precio base</Text>
+            <Text numberOfLines={1} style={styles.priceValue}>
+              {formatPrice(lot.precioBase, currency)}
+            </Text>
           </View>
 
-          <View style={styles.newBadge}>
-            <Text style={styles.newBadgeText}>NUEVO</Text>
+          <View style={styles.statusBadge}>
+            <Text numberOfLines={1} style={styles.statusBadgeText}>
+              {status.toUpperCase()}
+            </Text>
           </View>
         </View>
       </View>
@@ -118,12 +223,137 @@ function ProductLotCard({ imageSize, lot, onPress }) {
   );
 }
 
-export default function AuctionDetailScreen({ onProductPress }) {
+export default function AuctionDetailScreen({
+  auction,
+  auctionId,
+  onProductPress,
+}) {
   const { width } = useWindowDimensions();
+  const [auctionDetails, setAuctionDetails] = useState(null);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [hasMoreLots, setHasMoreLots] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState('');
+  const [lots, setLots] = useState([]);
+  const [now, setNow] = useState(() => Date.now());
   const horizontalPadding = width < 360 ? 18 : 30;
   const contentWidth = Math.min(width - horizontalPadding * 2, 347);
   const imageSize = Math.max(116, Math.min(145, contentWidth * (145 / 347)));
   const compact = contentWidth < 325;
+  const resolvedAuctionId =
+    auctionId ?? auction?.identificador ?? auction?.id;
+  const countdown = formatTimeRemaining(
+    auctionDetails?.fecha,
+    auctionDetails?.hora,
+    now
+  );
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    setAuctionDetails(null);
+    setCatalogPage(1);
+    setHasMoreLots(false);
+    setIsLoadingMore(false);
+    setLoadMoreError('');
+    setLots([]);
+    setErrorMessage('');
+
+    if (resolvedAuctionId === undefined || resolvedAuctionId === null) {
+      setIsLoading(false);
+      setErrorMessage('No pudimos identificar la subasta seleccionada.');
+      return undefined;
+    }
+
+    setIsLoading(true);
+
+    Promise.all([
+      getAuctionDetails(resolvedAuctionId),
+      getAuctionCatalog(resolvedAuctionId, 1, CATALOG_PAGE_SIZE),
+    ])
+      .then(([details, catalog]) => {
+        if (active) {
+          const detailDoesNotMatch =
+            String(details?.identificador) !== String(resolvedAuctionId);
+          const catalogDoesNotMatch =
+            catalog?.idSubasta !== undefined &&
+            String(catalog.idSubasta) !== String(details?.identificador);
+
+          if (
+            detailDoesNotMatch ||
+            catalogDoesNotMatch
+          ) {
+            throw new Error('El catalogo recibido no corresponde a la subasta.');
+          }
+
+          setAuctionDetails(details);
+          setCatalogPage(1);
+          setHasMoreLots(hasMoreCatalogPages(catalog));
+          setLots(Array.isArray(catalog?.items) ? catalog.items : []);
+          setNow(Date.now());
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setErrorMessage(
+            error?.message || 'No pudimos cargar la subasta y su catalogo.'
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [resolvedAuctionId]);
+
+  async function handleLoadMore() {
+    if (!hasMoreLots || isLoadingMore) {
+      return;
+    }
+
+    const nextPage = catalogPage + 1;
+    setIsLoadingMore(true);
+    setLoadMoreError('');
+
+    try {
+      const catalog = await getAuctionCatalog(
+        resolvedAuctionId,
+        nextPage,
+        CATALOG_PAGE_SIZE
+      );
+
+      if (
+        catalog?.idSubasta !== undefined &&
+        String(catalog.idSubasta) !== String(resolvedAuctionId)
+      ) {
+        throw new Error('El catalogo recibido no corresponde a la subasta.');
+      }
+
+      const nextLots = Array.isArray(catalog?.items) ? catalog.items : [];
+      setLots((currentLots) => [...currentLots, ...nextLots]);
+      setCatalogPage(nextPage);
+      setHasMoreLots(hasMoreCatalogPages(catalog));
+    } catch (error) {
+      setLoadMoreError(
+        error?.message || 'No pudimos cargar mas productos.'
+      );
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
 
   return (
     <View style={[styles.screen, { paddingHorizontal: horizontalPadding }]}>
@@ -131,7 +361,7 @@ export default function AuctionDetailScreen({ onProductPress }) {
         <View style={styles.summaryShell}>
           <View style={styles.auctionPill}>
             <Text numberOfLines={1} style={styles.auctionPillText}>
-              Gyaru Deluxe
+              {auctionDetails?.nombre || 'Subasta'}
             </Text>
           </View>
 
@@ -139,40 +369,83 @@ export default function AuctionDetailScreen({ onProductPress }) {
             <View style={styles.countdownBlock}>
               <Text style={styles.countdownLabel}>La subasta inicia en</Text>
               <Text style={styles.countdownValue}>
-                <Text style={styles.countdownDays}>3 dias </Text>
-                14h 37m
+                {countdown
+                  ? `${countdown.days} dias, ${countdown.hours}h y ${countdown.minutes}m`
+                  : 'Fecha a confirmar'}
               </Text>
             </View>
 
             <View style={styles.auctionMeta}>
               <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText}>ESPECIAL</Text>
+                <Text style={styles.categoryBadgeText}>
+                  {(auctionDetails?.categoria || 'Sin categoria').toUpperCase()}
+                </Text>
               </View>
 
               <View style={styles.locationRow}>
                 <LocationPinIcon size={compact ? 25 : 31} />
                 <Text style={styles.locationText}>
-                  La Rural,{'\n'}Palermo, CABA
+                  {auctionDetails?.ubicacion || 'Ubicacion a confirmar'}
                 </Text>
               </View>
             </View>
           </View>
         </View>
 
-        <View style={styles.lotList}>
-          {referenceLots.map((lot) => (
-            <ProductLotCard
-              imageSize={imageSize}
-              key={lot.code}
-              lot={lot}
-              onPress={() => onProductPress?.(lot)}
-            />
-          ))}
-        </View>
+        {isLoading ? (
+          <View style={styles.feedbackCard}>
+            <ActivityIndicator color={colors.burgundy} size="large" />
+            <Text style={styles.feedbackText}>Cargando subasta...</Text>
+          </View>
+        ) : errorMessage ? (
+          <View style={styles.feedbackCard}>
+            <Text style={styles.feedbackText}>{errorMessage}</Text>
+          </View>
+        ) : lots.length === 0 ? (
+          <View style={styles.feedbackCard}>
+            <Text style={styles.feedbackText}>
+              Esta subasta todavia no tiene productos en su catalogo.
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.lotList}>
+              {lots.map((lot, index) => (
+                <ProductLotCard
+                  currency={auctionDetails?.moneda}
+                  imageSize={imageSize}
+                  key={String(lot.identificador ?? lot.idProducto ?? index)}
+                  lot={lot}
+                  onPress={() => onProductPress?.(lot)}
+                />
+              ))}
+            </View>
 
-        <View style={styles.loadMoreButton}>
-          <Text style={styles.loadMoreText}>Cargar mas</Text>
-        </View>
+            {loadMoreError ? (
+              <Text style={styles.loadMoreError}>{loadMoreError}</Text>
+            ) : null}
+
+            {hasMoreLots ? (
+              <Pressable
+                accessibilityLabel="Ver más productos"
+                accessibilityRole="button"
+                disabled={isLoadingMore}
+                onPress={handleLoadMore}
+                style={({ pressed }) => [
+                  styles.loadMoreButton,
+                  pressed ? styles.loadMoreButtonPressed : null,
+                  isLoadingMore ? styles.loadMoreButtonDisabled : null,
+                ]}
+              >
+                {isLoadingMore ? (
+                  <ActivityIndicator color={colors.white} size="small" />
+                ) : (
+                  <Text style={styles.loadMoreText}>Ver más</Text>
+                )}
+              </Pressable>
+            ) : null}
+          </>
+        )}
       </View>
     </View>
   );
@@ -195,15 +468,16 @@ const styles = StyleSheet.create({
   },
   auctionPill: {
     alignItems: 'center',
+    alignSelf: 'flex-start',
     backgroundColor: colors.burgundy,
     borderRadius: 5,
     height: 28,
     justifyContent: 'center',
     left: -11,
+    maxWidth: '95%',
     paddingHorizontal: 10,
     position: 'absolute',
     top: 0,
-    width: 126,
     zIndex: 2,
   },
   auctionPillText: {
@@ -242,9 +516,9 @@ const styles = StyleSheet.create({
   countdownValue: {
     color: colors.burgundy,
     fontFamily: fonts.semiBold,
-    fontSize: 24,
+    fontSize: 20,
     letterSpacing: 0,
-    lineHeight: 31,
+    lineHeight: 26,
   },
   auctionMeta: {
     alignItems: 'flex-end',
@@ -291,6 +565,7 @@ const styles = StyleSheet.create({
     backgroundColor: referenceColors.card,
     borderRadius: 5,
     flexDirection: 'row',
+    minHeight: 128,
     overflow: 'hidden',
     width: '100%',
   },
@@ -298,18 +573,27 @@ const styles = StyleSheet.create({
     opacity: 0.88,
     transform: [{ scale: 0.995 }],
   },
-  productImage: {
-    backgroundColor: colors.cardBlush,
-    flexShrink: 0,
-  },
   productBody: {
     flex: 1,
     justifyContent: 'space-between',
     minWidth: 0,
-    paddingBottom: 8,
-    paddingLeft: 11,
-    paddingRight: 11,
-    paddingTop: 9,
+    paddingBottom: 14,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+  },
+  productImage: {
+    backgroundColor: colors.cardBlush,
+    flexShrink: 0,
+  },
+  productImageFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productImageFallbackText: {
+    color: referenceColors.text,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    opacity: 0.62,
   },
   productCode: {
     color: referenceColors.text,
@@ -347,19 +631,21 @@ const styles = StyleSheet.create({
   priceValue: {
     color: referenceColors.text,
     fontFamily: fonts.bold,
-    fontSize: 17,
+    fontSize: 15,
     letterSpacing: 0,
-    lineHeight: 19,
+    lineHeight: 18,
   },
-  newBadge: {
+  statusBadge: {
     alignItems: 'center',
     backgroundColor: colors.burgundy,
     borderRadius: 5,
     height: 23,
     justifyContent: 'center',
-    width: 66,
+    maxWidth: 116,
+    minWidth: 66,
+    paddingHorizontal: 10,
   },
-  newBadgeText: {
+  statusBadgeText: {
     color: colors.white,
     fontFamily: fonts.bold,
     fontSize: 11,
@@ -376,11 +662,39 @@ const styles = StyleSheet.create({
     marginTop: 30,
     width: 155,
   },
+  loadMoreButtonDisabled: {
+    opacity: 0.7,
+  },
+  loadMoreButtonPressed: {
+    opacity: 0.88,
+  },
+  loadMoreError: {
+    color: referenceColors.text,
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    marginTop: 16,
+    textAlign: 'center',
+  },
   loadMoreText: {
     color: colors.white,
     fontFamily: fonts.bold,
     fontSize: 15,
-    letterSpacing: 0,
     lineHeight: 19,
+  },
+  feedbackCard: {
+    alignItems: 'center',
+    backgroundColor: referenceColors.card,
+    borderRadius: 5,
+    justifyContent: 'center',
+    minHeight: 128,
+    padding: 20,
+    rowGap: 12,
+  },
+  feedbackText: {
+    color: referenceColors.text,
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
 });

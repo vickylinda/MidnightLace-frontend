@@ -419,7 +419,10 @@ export default function AppNavigator() {
         ) : null
       ) : currentRoute === ROUTES.auctionDetail ? (
         selectedAuction ? (
-          <AuctionDetailScreen onProductPress={handleAuctionProductPress} />
+          <AuctionDetailScreen
+            auction={selectedAuction}
+            onProductPress={handleAuctionProductPress}
+          />
         ) : null
       ) : currentRoute === ROUTES.auctions ? (
         <AllAuctionsScreen onAuctionPress={handleAuctionPress} />
