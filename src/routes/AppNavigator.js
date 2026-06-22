@@ -116,6 +116,7 @@ export default function AppNavigator() {
   );
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
+  const [registrationCategory, setRegistrationCategory] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryCode, setRecoveryCode] = useState('');
@@ -480,6 +481,7 @@ export default function AppNavigator() {
         />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
         <SignUpAuthorizingScreen
+          category={registrationCategory}
           onAuthorized={() => navigateTo(ROUTES.signUpVerification)}
         />
       ) : currentRoute === ROUTES.signUpVerification ? (
@@ -500,8 +502,9 @@ export default function AppNavigator() {
         <PaymentMethodsScreen onContinue={() => navigateTo(ROUTES.home)} />
       ) : currentRoute === ROUTES.signUp ? (
         <SignUpScreen
-          onSubmitSuccess={({ email }) => {
+          onSubmitSuccess={({ email, categoria }) => {
             setRegistrationEmail(email);
+            setRegistrationCategory(categoria || '');
             navigateTo(ROUTES.signUpAuthorizing);
           }}
         />
