@@ -237,6 +237,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
       formData.append('codigoPostal', address.postalCode);
       formData.append('localidad', address.locality);
       formData.append('ciudad', address.province);
+      formData.append('codigoPostal', address.postalCode);
       formData.append('idPais', String(selectedCountryId));
       if (address.apartment) {
         formData.append('departamento', address.apartment);

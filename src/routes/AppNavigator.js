@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as ExpoSplashScreen from 'expo-splash-screen';
 import { Platform } from 'react-native';
 
+import { useNotifications } from '../context/NotificationsContext';
 import { loadSession } from '../utils/session';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
@@ -122,6 +123,14 @@ export default function AppNavigator() {
   const [selectedAuction, setSelectedAuction] = useState(null);
   const [selectedAuctionProduct, setSelectedAuctionProduct] = useState(null);
 
+  const { connect, disconnect, refetch } = useNotifications();
+  const connectRef = useRef(connect);
+  const disconnectRef = useRef(disconnect);
+  const refetchRef = useRef(refetch);
+  connectRef.current = connect;
+  disconnectRef.current = disconnect;
+  refetchRef.current = refetch;
+
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({
     GreatVibes_400Regular: require('@expo-google-fonts/great-vibes/400Regular/GreatVibes_400Regular.ttf'),
@@ -164,6 +173,7 @@ export default function AppNavigator() {
           ? session ? ROUTES.home : ROUTES.login
           : prev
       );
+      if (session) { connectRef.current(); refetchRef.current(); }
     }
 
     init();
@@ -443,6 +453,7 @@ export default function AppNavigator() {
         <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => {
+          disconnect();
           import('../utils/session').then(({ clearSession }) => clearSession());
           navigateTo(ROUTES.login, { replace: true });
         }} />
@@ -500,7 +511,7 @@ export default function AppNavigator() {
       ) : (
         <LoginScreen
           onForgotPasswordPress={() => navigateTo(ROUTES.forgotPassword)}
-          onLoginSuccess={() => navigateTo(ROUTES.home)}
+          onLoginSuccess={() => { connect(); navigateTo(ROUTES.home); refetch(); }}
           onRegisterPress={() => navigateTo(ROUTES.signUp)}
         />
       )}
