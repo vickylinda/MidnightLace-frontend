@@ -132,6 +132,8 @@ export default function AppNavigator() {
   connectRef.current = connect;
   disconnectRef.current = disconnect;
   refetchRef.current = refetch;
+  const isSubastador = hasRole('subastador');
+  const canCreateProduct = !isSubastador;
 
   const [selectedPenalty, setSelectedPenalty] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -250,6 +252,17 @@ export default function AppNavigator() {
       setSelectedAuctionProduct(null);
     }
   }, [currentRoute, selectedAuctionProduct]);
+
+  useEffect(() => {
+    if (!isLoading && currentRoute === ROUTES.createAuction && !isSubastador) {
+      navigateTo(ROUTES.auctions, { replace: true });
+    }
+
+    if (!isLoading && currentRoute === ROUTES.createProduct && !canCreateProduct) {
+      navigateTo(ROUTES.productCatalog, { replace: true });
+    }
+  }, [canCreateProduct, currentRoute, isLoading, isSubastador]);
+
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
       return;
@@ -421,12 +434,19 @@ export default function AppNavigator() {
       }
       enableSwipeBack={canNavigateBack}
       floatingAction={
-        currentRoute === ROUTES.auctions ||
-        currentRoute === ROUTES.createAuction ||
-        currentRoute === ROUTES.productCatalog ? (
+        (currentRoute === ROUTES.auctions && isSubastador) ||
+        (currentRoute === ROUTES.productCatalog && canCreateProduct) ? (
           <AuctionSpeedDial
-            onCreateAuction={hasRole('subastador') ? () => navigateTo(ROUTES.createAuction) : undefined}
-            onCreateProduct={hasRole('vendedor') ? () => navigateTo(ROUTES.createProduct) : undefined}
+            onCreateAuction={
+              currentRoute === ROUTES.auctions && isSubastador
+                ? () => navigateTo(ROUTES.createAuction)
+                : undefined
+            }
+            onCreateProduct={
+              currentRoute === ROUTES.productCatalog && canCreateProduct
+                ? () => navigateTo(ROUTES.createProduct)
+                : undefined
+            }
           />
         ) : null
       }
@@ -445,7 +465,7 @@ export default function AppNavigator() {
           <AuctionDetailScreen onProductPress={handleAuctionProductPress} />
         ) : null
       ) : currentRoute === ROUTES.auctions ? (
-        <AllAuctionsScreen isSubastador={hasRole('subastador')} onAuctionPress={handleAuctionPress} />
+        <AllAuctionsScreen isSubastador={isSubastador} onAuctionPress={handleAuctionPress} />
       ) : currentRoute === ROUTES.createAuction ? (
         <CreateAuctionScreen onSubmitSuccess={() => navigateTo(ROUTES.auctions)} />
       ) : currentRoute === ROUTES.createProduct ? (
@@ -454,6 +474,7 @@ export default function AppNavigator() {
         />
       ) : currentRoute === ROUTES.productCatalog ? (
         <ProductCatalogScreen
+          canCreateProduct={canCreateProduct}
           onCreateProduct={() => navigateTo(ROUTES.createProduct)}
           onGoHome={() => navigateTo(ROUTES.home)}
         />

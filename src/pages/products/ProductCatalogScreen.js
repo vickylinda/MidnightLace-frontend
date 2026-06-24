@@ -378,7 +378,7 @@ function ProductDetailsModal({ product, onClose, onReviewConditions }) {
   );
 }
 
-function EmptyProductsNotice({ onCreateProduct, onGoHome }) {
+function EmptyProductsNotice({ canCreateProduct, onCreateProduct, onGoHome }) {
   return (
     <View style={styles.emptyCard}>
       <Image
@@ -394,9 +394,11 @@ function EmptyProductsNotice({ onCreateProduct, onGoHome }) {
       <Text style={styles.emptyMessage}>pero nunca es tarde!</Text>
 
       <View style={styles.emptyActions}>
-        <PrimaryButton onPress={onCreateProduct} style={styles.emptyButton}>
-          Crear producto
-        </PrimaryButton>
+        {canCreateProduct ? (
+          <PrimaryButton onPress={onCreateProduct} style={styles.emptyButton}>
+            Crear producto
+          </PrimaryButton>
+        ) : null}
         <PrimaryButton onPress={onGoHome} style={styles.emptyButton}>
           Volver a home
         </PrimaryButton>
@@ -473,7 +475,11 @@ function ConditionsModal({ state, onAccept, onReject, onClose }) {
 
 const EMPTY_CONDITIONS = { product: null, data: null, loading: false, error: null, submitting: false };
 
-export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
+export default function ProductCatalogScreen({
+  canCreateProduct = false,
+  onCreateProduct,
+  onGoHome,
+}) {
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -545,6 +551,7 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
         <Text style={styles.error}>{error}</Text>
       ) : products.length === 0 ? (
         <EmptyProductsNotice
+          canCreateProduct={canCreateProduct}
           onCreateProduct={onCreateProduct}
           onGoHome={onGoHome}
         />

@@ -122,6 +122,12 @@ export default function TopBar({
   const notifications = ctx?.notifications ?? [];
   const unreadCount = ctx?.unreadCount ?? 0;
   const markAsRead = ctx?.markAsRead ?? (() => {});
+  const refetchNotifications = ctx?.refetch ?? (() => {});
+
+  function openNotifications() {
+    refetchNotifications();
+    setIsNotificationsOpen(true);
+  }
 
   return (
     <View style={[styles.wrapper, { height: TOP_BAR_HEIGHT + insets.top }]}>
@@ -170,7 +176,7 @@ export default function TopBar({
             accessibilityLabel="Abrir notificaciones"
             accessibilityRole="button"
             hitSlop={10}
-            onPress={() => setIsNotificationsOpen(true)}
+            onPress={openNotifications}
             style={styles.sideSlot}
           >
             <NotificationIcon />
