@@ -133,33 +133,118 @@ function getProductPhotos(producto) {
   });
 }
 
+function splitCatalogDescription(producto) {
+  const catalogText = String(producto.descripcionCatalogo ?? '').trim();
+  const catalogLines = catalogText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const title =
+    String(producto.nombre ?? '').trim() ||
+    catalogLines[0] ||
+    'Producto sin nombre';
+
+  const shortDescription = catalogLines.slice(1).join('\n').trim() || null;
+
+  return {
+    title,
+    shortDescription,
+  };
+}
+
+function formatPrice(value, currency) {
+  const price = Number(String(value ?? '').replace(',', '.'));
+
+  if (!Number.isFinite(price)) {
+    return null;
+  }
+
+  const currencyCode = String(currency || 'ARS').toUpperCase();
+
+  try {
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: currencyCode,
+      maximumFractionDigits: price % 1 === 0 ? 0 : 2,
+    }).format(price);
+  } catch {
+    return `${currencyCode} ${price}`;
+  }
+}
+
+function parseArtisticDetails(producto) {
+  const rawDetails =
+    producto.detalleArtistico ??
+    producto.detallesArtisticos ??
+    producto.detalleArtisticoProducto ??
+    null;
+
+  if (!rawDetails) {
+    return [];
+  }
+
+  let details = rawDetails;
+
+  if (typeof rawDetails === 'string') {
+    try {
+      details = JSON.parse(rawDetails);
+    } catch {
+      return [];
+    }
+  }
+
+  return [
+    { label: 'Artista o diseñador', value: details.artista },
+    { label: 'Fecha o período', value: details.fechaObra },
+    { label: 'Historia y procedencia', value: details.historia },
+  ].filter((item) => item.value);
+}
+
 function mapProduct(producto) {
   const mapped = STATUS_MAP[producto.estadoProducto] ?? {
     status: 'pending',
     statusLabel: producto.estadoProducto,
   };
-  const lines = String(producto.descripcionCompleta ?? '').split('\n');
-  const title = String(producto.nombre ?? lines[0] ?? '').slice(0, 60);
-  const description = lines.slice(1).join('\n').trim() || null;
+
+  const { title, shortDescription } = splitCatalogDescription(producto);
+
+  const completeDescription =
+    String(producto.descripcionCompleta ?? '').trim() || null;
+
   const imageSources = getProductPhotos(producto);
   const imageSource = imageSources[0] ?? null;
-  const ownerValue = producto.publicadoPor ?? producto.owner ?? producto.usuario ?? producto.vendedor;
+
+  const ownerValue =
+    producto.publicadoPor ??
+    producto.owner ??
+    producto.usuario ??
+    producto.vendedor;
+
   const owner =
     typeof ownerValue === 'string'
       ? ownerValue
-      : ownerValue?.username ?? ownerValue?.nombreUsuario ?? ownerValue?.nombre ?? null;
+      : ownerValue?.username ??
+        ownerValue?.nombreUsuario ??
+        ownerValue?.nombre ??
+        null;
+
   const rawId = producto.identificador ?? null;
 
   return {
-    description,
+    artisticDetails: parseArtisticDetails(producto),
+    completeDescription,
+    description: shortDescription,
     id: String(rawId ?? producto.id ?? title),
     rawId,
     imageSource,
     imageSources,
     owner,
+    priceLabel: formatPrice(producto.precioBase, producto.moneda),
+    shortDescription,
     status: mapped.status,
     statusLabel: mapped.statusLabel,
-    title: title || 'Producto sin nombre',
+    title: title.slice(0, 60) || 'Producto sin nombre',
   };
 }
 
@@ -248,10 +333,37 @@ function ProductDetailsModal({ product, onClose, onReviewConditions }) {
             {product.owner ? (
               <Text style={styles.modalMeta}>Publicado por @{product.owner}</Text>
             ) : null}
-            {product.description ? (
+            {product.priceLabel ? (
+              <View style={styles.modalPriceRow}>
+                <Text style={styles.modalPriceLabel}>Precio base:</Text>
+                <Text style={styles.modalPriceValue}>{product.priceLabel}</Text>
+              </View>
+            ) : null}
+
+            {product.shortDescription ? (
               <View style={styles.modalDescriptionBox}>
-                <Text style={styles.modalDescriptionTitle}>Descripcion</Text>
-                <Text style={styles.modalDescription}>{product.description}</Text>
+                <Text style={styles.modalDescriptionTitle}>Descripción breve</Text>
+                <Text style={styles.modalDescription}>{product.shortDescription}</Text>
+              </View>
+            ) : null}
+
+            {product.completeDescription ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Descripción completa</Text>
+                <Text style={styles.modalDescription}>{product.completeDescription}</Text>
+              </View>
+            ) : null}
+
+            {product.artisticDetails.length > 0 ? (
+              <View style={styles.modalInfoBox}>
+                <Text style={styles.modalInfoTitle}>Información adicional</Text>
+
+                {product.artisticDetails.map((item) => (
+                  <View key={item.label} style={styles.modalDetailRow}>
+                    <Text style={styles.modalDetailLabel}>{item.label}:</Text>
+                    <Text style={styles.modalDetailValue}>{item.value}</Text>
+                  </View>
+                ))}
               </View>
             ) : null}
             {onReviewConditions ? (
@@ -760,4 +872,39 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mutedRose,
     width: 128,
   },
+  modalPriceRow: {
+  alignItems: 'center',
+  columnGap: 8,
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  marginTop: 14,
+},
+modalPriceLabel: {
+  color: colors.textBurgundy,
+  fontFamily: fonts.bold,
+  fontSize: 15,
+  lineHeight: 19,
+},
+modalPriceValue: {
+  color: colors.cocoa,
+  fontFamily: fonts.semiBold,
+  fontSize: 15,
+  lineHeight: 19,
+},
+modalDetailRow: {
+  marginTop: 8,
+},
+modalDetailLabel: {
+  color: colors.textBurgundy,
+  fontFamily: fonts.bold,
+  fontSize: 14,
+  lineHeight: 18,
+},
+modalDetailValue: {
+  color: colors.textBurgundy,
+  fontFamily: fonts.regular,
+  fontSize: 14,
+  lineHeight: 20,
+  marginTop: 2,
+},
 });
