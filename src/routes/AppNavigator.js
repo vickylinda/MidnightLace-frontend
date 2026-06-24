@@ -1,36 +1,41 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
+import * as ExpoSplashScreen from 'expo-splash-screen';
 import { Platform } from 'react-native';
 
+import { useNotifications } from '../context/NotificationsContext';
 import { hasRole, loadSession } from '../utils/session';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
-import AuctionDetailScreen from '../pages/AuctionDetailScreen';
-import AllAuctionsScreen from '../pages/AllAuctionsScreen';
+import AuctionDetailScreen from '../pages/auctions/AuctionDetailScreen';
+import AuctionProductScreen from '../pages/auctions/AuctionProductScreen';
+import AllAuctionsScreen from '../pages/auctions/AllAuctionsScreen';
 import CreateAuctionScreen from '../pages/CreateAuctionScreen';
-import CreateProductScreen from '../pages/CreateProductScreen';
-import ForgotPasswordScreen from '../pages/ForgotPasswordScreen';
-import HomeScreen from '../pages/HomeScreen';
-import LoginScreen from '../pages/LoginScreen';
-import MyActivityScreen from '../pages/MyActivityScreen';
-import PaymentMethodsScreen from '../pages/PaymentMethodsScreen';
-import PenaltyPaymentScreen from '../pages/PenaltyPaymentScreen';
-import ProductCatalogScreen from '../pages/ProductCatalogScreen';
-import ProfileScreen from '../pages/ProfileScreen';
-import ResetPasswordScreen from '../pages/ResetPasswordScreen';
-import SignUpAuthorizingScreen from '../pages/SignUpAuthorizingScreen';
-import SignUpFinalScreen from '../pages/SignUpFinalScreen';
-import SignUpScreen from '../pages/SignUpScreen';
-import SignUpVerificationScreen from '../pages/SignUpVerificationScreen';
-import SplashScreen from '../pages/SplashScreen';
-
+import CreateProductScreen from '../pages/products/CreateProductScreen';
+import ForgotPasswordScreen from '../pages/auth/ForgotPasswordScreen';
+import ForgotPasswordVerificationScreen from '../pages/auth/ForgotPasswordVerificationScreen';
+import HomeScreen from '../pages/home/HomeScreen';
+import LoginScreen from '../pages/auth/LoginScreen';
+import MyActivityScreen from '../pages/activity/MyActivityScreen';
+import PaymentMethodsScreen from '../pages/signup/PaymentMethodsScreen';
+import PenaltyPaymentScreen from '../pages/activity/PenaltyPaymentScreen';
+import ProductCatalogScreen from '../pages/products/ProductCatalogScreen';
+import ProfileScreen from '../pages/profile/ProfileScreen';
+import ResetPasswordScreen from '../pages/auth/ResetPasswordScreen';
+import SignUpAuthorizingScreen from '../pages/signup/SignUpAuthorizingScreen';
+import SignUpFinalScreen from '../pages/signup/SignUpFinalScreen';
+import SignUpScreen from '../pages/signup/SignUpScreen';
+import SignUpVerificationScreen from '../pages/signup/SignUpVerificationScreen';
+import SplashScreen from '../pages/splash/SplashScreen';
 const ROUTES = {
   auctionDetail: 'auctionDetail',
+  auctionProduct: 'auctionProduct',
   auctions: 'auctions',
   createAuction: 'createAuction',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
+  forgotPasswordVerification: 'forgotPasswordVerification',
   home: 'home',
   login: 'login',
   myActivity: 'myActivity',
@@ -48,10 +53,12 @@ const ROUTES = {
 
 const ROUTE_PATHS = {
   [ROUTES.auctionDetail]: '/subasta',
+  [ROUTES.auctionProduct]: '/subasta/producto',
   [ROUTES.auctions]: '/auctions',
   [ROUTES.createAuction]: '/auctions/new',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
+  [ROUTES.forgotPasswordVerification]: '/forgot-password/verification',
   [ROUTES.home]: '/home',
   [ROUTES.login]: '/login',
   [ROUTES.myActivity]: '/my-activity',
@@ -111,8 +118,20 @@ export default function AppNavigator() {
   );
   const [routeHistory, setRouteHistory] = useState([]);
   const [registrationEmail, setRegistrationEmail] = useState('');
+  const [registrationCategory, setRegistrationCategory] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [selectedAuction, setSelectedAuction] = useState(null);
+  const [selectedAuctionProduct, setSelectedAuctionProduct] = useState(null);
+
+  const { connect, disconnect, refetch } = useNotifications();
+  const connectRef = useRef(connect);
+  const disconnectRef = useRef(disconnect);
+  const refetchRef = useRef(refetch);
+  connectRef.current = connect;
+  disconnectRef.current = disconnect;
+  refetchRef.current = refetch;
 
   const [selectedPenalty, setSelectedPenalty] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -124,6 +143,18 @@ export default function AppNavigator() {
     Inter_700Bold: require('@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf'),
     PlayfairDisplay_700Bold: require('@expo-google-fonts/playfair-display/700Bold/PlayfairDisplay_700Bold.ttf'),
   });
+
+  useEffect(() => {
+    if (!fontsLoaded) {
+      return undefined;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      ExpoSplashScreen.hideAsync().catch(() => {});
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [fontsLoaded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +176,7 @@ export default function AppNavigator() {
           ? session ? ROUTES.home : ROUTES.login
           : prev
       );
+      if (session) { connectRef.current(); refetchRef.current(); }
     }
 
     init();
@@ -185,7 +217,11 @@ export default function AppNavigator() {
   }, [currentRoute, isLoading, selectedAuction]);
 
   useEffect(() => {
-    if (currentRoute !== ROUTES.auctionDetail && selectedAuction) {
+    if (
+      currentRoute !== ROUTES.auctionDetail &&
+      currentRoute !== ROUTES.auctionProduct &&
+      selectedAuction
+    ) {
       setSelectedAuction(null);
     }
   }, [currentRoute, selectedAuction]);
@@ -196,6 +232,24 @@ export default function AppNavigator() {
     }
   }, [currentRoute, selectedPenalty]);
 
+  useEffect(() => {
+    if (
+      !isLoading &&
+      currentRoute === ROUTES.auctionProduct &&
+      !selectedAuctionProduct
+    ) {
+      navigateTo(
+        selectedAuction ? ROUTES.auctionDetail : ROUTES.auctions,
+        { replace: true }
+      );
+    }
+  }, [currentRoute, isLoading, selectedAuction, selectedAuctionProduct]);
+
+  useEffect(() => {
+    if (currentRoute !== ROUTES.auctionProduct && selectedAuctionProduct) {
+      setSelectedAuctionProduct(null);
+    }
+  }, [currentRoute, selectedAuctionProduct]);
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
       return;
@@ -214,8 +268,12 @@ export default function AppNavigator() {
       return ROUTES.login;
     }
 
-    if (route === ROUTES.resetPassword) {
+    if (route === ROUTES.forgotPasswordVerification) {
       return ROUTES.forgotPassword;
+    }
+
+    if (route === ROUTES.resetPassword) {
+      return ROUTES.forgotPasswordVerification;
     }
 
     if (route === ROUTES.signUp) {
@@ -247,11 +305,15 @@ export default function AppNavigator() {
     }
 
     if (route === ROUTES.createProduct) {
-      return ROUTES.auctions;
+      return ROUTES.productCatalog;
     }
 
     if (route === ROUTES.auctionDetail) {
       return ROUTES.auctions;
+    }
+
+    if (route === ROUTES.auctionProduct) {
+      return ROUTES.auctionDetail;
     }
 
     if (
@@ -287,6 +349,11 @@ export default function AppNavigator() {
     navigateTo(ROUTES.auctionDetail);
   }
 
+  function handleAuctionProductPress(product) {
+    setSelectedAuctionProduct(product);
+    navigateTo(ROUTES.auctionProduct);
+  }
+
   function handleNavItemPress(itemId) {
     if (itemId === 'inicio') {
       navigateTo(ROUTES.home);
@@ -316,6 +383,7 @@ export default function AppNavigator() {
   const layoutVariant =
     currentRoute === ROUTES.login ||
     currentRoute === ROUTES.forgotPassword ||
+    currentRoute === ROUTES.forgotPasswordVerification ||
     currentRoute === ROUTES.resetPassword ||
     currentRoute === ROUTES.signUp ||
     currentRoute === ROUTES.signUpAuthorizing ||
@@ -333,16 +401,14 @@ export default function AppNavigator() {
 
   return (
     <AppLayout
-      activeNavItem={
-        currentRoute === ROUTES.auctions
+      activeItem={
+        currentRoute === ROUTES.auctions ||
+        currentRoute === ROUTES.createAuction ||
+        currentRoute === ROUTES.auctionDetail ||
+        currentRoute === ROUTES.auctionProduct
           ? 'subastas'
-          : currentRoute === ROUTES.auctionDetail
-          ? 'subastas'
-          : currentRoute === ROUTES.createAuction
-          ? 'subastas'
-          : currentRoute === ROUTES.createProduct
-          ? 'subastas'
-          : currentRoute === ROUTES.productCatalog
+          : currentRoute === ROUTES.createProduct ||
+            currentRoute === ROUTES.productCatalog
           ? 'catalogo'
           : currentRoute === ROUTES.home
           ? 'inicio'
@@ -355,10 +421,12 @@ export default function AppNavigator() {
       }
       enableSwipeBack={canNavigateBack}
       floatingAction={
-        currentRoute === ROUTES.auctions || currentRoute === ROUTES.createAuction ? (
+        currentRoute === ROUTES.auctions ||
+        currentRoute === ROUTES.createAuction ||
+        currentRoute === ROUTES.productCatalog ? (
           <AuctionSpeedDial
             onCreateAuction={hasRole('subastador') ? () => navigateTo(ROUTES.createAuction) : undefined}
-            onCreateProduct={!hasRole('subastador') ? () => navigateTo(ROUTES.createProduct) : undefined}
+            onCreateProduct={hasRole('vendedor') ? () => navigateTo(ROUTES.createProduct) : undefined}
           />
         ) : null
       }
@@ -368,8 +436,14 @@ export default function AppNavigator() {
       showNotifications={layoutVariant !== 'auth'}
       variant={layoutVariant}
     >
-      {currentRoute === ROUTES.auctionDetail ? (
-        selectedAuction ? <AuctionDetailScreen /> : null
+      {currentRoute === ROUTES.auctionProduct ? (
+        selectedAuctionProduct ? (
+          <AuctionProductScreen product={selectedAuctionProduct} />
+        ) : null
+      ) : currentRoute === ROUTES.auctionDetail ? (
+        selectedAuction ? (
+          <AuctionDetailScreen onProductPress={handleAuctionProductPress} />
+        ) : null
       ) : currentRoute === ROUTES.auctions ? (
         <AllAuctionsScreen isSubastador={hasRole('subastador')} onAuctionPress={handleAuctionPress} />
       ) : currentRoute === ROUTES.createAuction ? (
@@ -379,7 +453,10 @@ export default function AppNavigator() {
           onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
         />
       ) : currentRoute === ROUTES.productCatalog ? (
-        <ProductCatalogScreen />
+        <ProductCatalogScreen
+          onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+          onGoHome={() => navigateTo(ROUTES.home)}
+        />
       ) : currentRoute === ROUTES.home ? (
         <HomeScreen
           onAuctionPress={handleAuctionPress}
@@ -391,19 +468,35 @@ export default function AppNavigator() {
         <PenaltyPaymentScreen multa={selectedPenalty} onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => {
+          disconnect();
           import('../utils/session').then(({ clearSession }) => clearSession());
           navigateTo(ROUTES.login, { replace: true });
         }} />
       ) : currentRoute === ROUTES.forgotPassword ? (
         <ForgotPasswordScreen
-          onResetLinkPress={() => navigateTo(ROUTES.resetPassword)}
+          onCodeSent={({ email }) => {
+            setRecoveryEmail(email);
+            setRecoveryCode('');
+            navigateTo(ROUTES.forgotPasswordVerification);
+          }}
+        />
+      ) : currentRoute === ROUTES.forgotPasswordVerification ? (
+        <ForgotPasswordVerificationScreen
+          email={recoveryEmail}
+          onVerified={({ code }) => {
+            setRecoveryCode(code);
+            navigateTo(ROUTES.resetPassword);
+          }}
         />
       ) : currentRoute === ROUTES.resetPassword ? (
         <ResetPasswordScreen
+          code={recoveryCode}
+          email={recoveryEmail}
           onFinish={() => navigateTo(ROUTES.login, { replace: true })}
         />
       ) : currentRoute === ROUTES.signUpAuthorizing ? (
         <SignUpAuthorizingScreen
+          category={registrationCategory}
           onAuthorized={() => navigateTo(ROUTES.signUpVerification)}
         />
       ) : currentRoute === ROUTES.signUpVerification ? (
@@ -424,15 +517,16 @@ export default function AppNavigator() {
         <PaymentMethodsScreen onContinue={() => navigateTo(ROUTES.home)} />
       ) : currentRoute === ROUTES.signUp ? (
         <SignUpScreen
-          onSubmitSuccess={({ email }) => {
+          onSubmitSuccess={({ email, categoria }) => {
             setRegistrationEmail(email);
+            setRegistrationCategory(categoria || '');
             navigateTo(ROUTES.signUpAuthorizing);
           }}
         />
       ) : (
         <LoginScreen
           onForgotPasswordPress={() => navigateTo(ROUTES.forgotPassword)}
-          onLoginSuccess={() => navigateTo(ROUTES.home)}
+          onLoginSuccess={() => { connect(); navigateTo(ROUTES.home); refetch(); }}
           onRegisterPress={() => navigateTo(ROUTES.signUp)}
         />
       )}

@@ -4,23 +4,27 @@
     "slug": "midnightlace-frontend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/transparent-splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#9F021D"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.midnightlace.frontend",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#9F021D"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -28,12 +32,35 @@
     "plugins": [
       "expo-font",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/transparent-splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#9F021D",
+          "android": {
+            "image": "./assets/transparent-splash.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#9F021D"
+          },
+          "ios": {
+            "image": "./assets/transparent-splash.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#9F021D"
+          }
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Midnight Lace necesita acceder a tus fotos para cargar la imagen del DNI.",
-          "cameraPermission": "Midnight Lace necesita acceder a la cámara para tomar una foto del DNI."
+          "cameraPermission": "Midnight Lace necesita acceder a la cÃ¡mara para tomar una foto del DNI."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8d7f7f28-8ab8-45cc-8234-404776dfd20f"
+      }
+    }
   }
 }

@@ -1,0 +1,12 @@
+# Keep EAS build uploads small.
+node_modules/
+.expo/
+dist/
+web-build/
+docs/*.apk
+docs/*.aab
+expo*.log
+eas-failed-log*.txt
+npm-debug.*
+yarn-debug.*
+yarn-error.*
