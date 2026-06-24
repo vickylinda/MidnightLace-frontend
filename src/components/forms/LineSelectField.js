@@ -102,9 +102,7 @@ export default function LineSelectField({
 const styles = StyleSheet.create({
   container: {
     marginBottom: 29,
-    position: 'relative',
     width: '100%',
-    zIndex: 5,
   },
   label: {
     color: colors.mutedRose,
@@ -137,12 +135,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(159, 2, 29, 0.3)',
     borderRadius: 6,
     borderWidth: 1,
-    left: 0,
+    marginTop: 8,
     overflow: 'hidden',
-    position: 'absolute',
-    right: 0,
-    top: 70,
-    zIndex: 20,
+    width: '100%',
   },
   option: {
     borderBottomColor: 'rgba(159, 2, 29, 0.12)',

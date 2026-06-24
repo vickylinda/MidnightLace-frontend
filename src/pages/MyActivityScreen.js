@@ -509,11 +509,28 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
   const metricYears = Object.keys(monthlyBidHistory).sort((a, b) => Number(b) - Number(a));
   const [selectedYear, setSelectedYear] = useState(() => metricYears[0] || String(new Date().getFullYear()));
 
-  const totalParticipated = metricas?.totalSubastasParticipadas ?? 0;
-  const totalGanadas = metricas?.totalGanadas ?? 0;
-  const totalPujas = metricas?.totalPujasRealizadas ?? 0;
-  const totalPagado = metricas?.totalImportePagado ?? 0;
-  const totalPujado = metricas?.totalImportePujado ?? 0;
+  const totalParticipated =
+  metricas?.totalSubastasParticipadas ??
+  metricas?.totalCompras ??
+  0;
+
+  const totalGanadas =
+    metricas?.totalGanadas ??
+    metricas?.pujasGanadas ??
+    0;
+
+  const totalPujas =
+    metricas?.totalPujasRealizadas ??
+    metricas?.totalPujas ??
+    0;
+
+  const totalPagado =
+    metricas?.totalImportePagado ??
+    0;
+
+  const totalPujado =
+    metricas?.totalImportePujado ??
+    0;
 
   const wonRatio = totalParticipated > 0 ? totalGanadas / totalParticipated : 0;
   const wonPercent = Math.round(wonRatio * 100);
@@ -771,12 +788,85 @@ export default function MyActivityScreen({ onPayPenalty }) {
         const res = await apiFetch('/v1/mi/multas?pagina=1&cantidad=50');
         result = (res.datos || res || []).map(mapMulta);
       } else if (tab === 'Metricas') {
-        const [metricasRes, pujasRes] = await Promise.all([
+        const [metricasRes, pujasRes, comprasRes, subastasRes] = await Promise.all([
           apiFetch('/v1/mi/metricas'),
-          apiFetch('/v1/mi/pujas?pagina=1&cantidad=200'),
+          apiFetch('/v1/mi/pujas?pagina=1&cantidad=100'),
+          apiFetch('/v1/mi/compras?pagina=1&cantidad=100'),
+          apiFetch('/v1/mi/subastas?pagina=1&cantidad=100'),
         ]);
+
         const pujas = pujasRes.datos || pujasRes || [];
-        result = { metricas: metricasRes, monthlyBidHistory: buildMonthlyBids(pujas) };
+        const compras = comprasRes.datos || comprasRes || [];
+        const subastas = subastasRes.datos || subastasRes || [];
+
+        const totalImportePujado = pujas.reduce(
+          (acc, puja) => acc + Number(puja.importe || 0),
+          0
+        );
+
+        const totalImportePagado = compras
+          .filter((compra) => compra.pagado === true)
+          .reduce((acc, compra) => acc + Number(compra.importe || 0), 0);
+
+        const categoriasMap = {};
+
+        subastas.forEach((subasta) => {
+          const categoria = subasta.categoria || 'sin categoria';
+
+          if (!categoriasMap[categoria]) {
+            categoriasMap[categoria] = {
+              categoria,
+              participaciones: 0,
+              ganadas: 0,
+            };
+          }
+
+          categoriasMap[categoria].participaciones += 1;
+        });
+
+        const subastasPorId = {};
+
+        subastas.forEach((subasta) => {
+          subastasPorId[subasta.identificador] = subasta;
+        });
+
+        pujas.forEach((puja) => {
+          if (puja.ganador !== 'si') return;
+
+          const subastaId =
+            puja.subasta?.identificador ??
+            puja.subasta?.id ??
+            puja.idSubasta;
+
+          const subasta = subastasPorId[subastaId];
+
+          if (!subasta?.categoria) return;
+
+          const categoria = subasta.categoria;
+
+          if (!categoriasMap[categoria]) {
+            categoriasMap[categoria] = {
+              categoria,
+              participaciones: 0,
+              ganadas: 0,
+            };
+          }
+
+          categoriasMap[categoria].ganadas += 1;
+        });
+
+        result = {
+          metricas: {
+            ...metricasRes,
+            totalSubastasParticipadas: subastas.length,
+            totalGanadas: metricasRes.pujasGanadas ?? 0,
+            totalPujasRealizadas: metricasRes.totalPujas ?? pujas.length,
+            totalImportePagado,
+            totalImportePujado,
+            porCategoria: Object.values(categoriasMap),
+          },
+          monthlyBidHistory: buildMonthlyBids(pujas),
+        };
       }
 
       loadedTabs.current.add(tab);
