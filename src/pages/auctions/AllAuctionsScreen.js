@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import AuctionCard from '../../components/auctions/AuctionCard';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
+import { resolveApiAssetUrl } from '../../utils/config';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 function capitalize(str) {
@@ -22,7 +23,7 @@ function mapSubastaToCard(s) {
   return {
     category: capitalize(s.categoria),
     dateTime: `${fecha}${hora}`,
-    imageSource: null,
+    imageSource: s.fotoPrincipal ? { uri: resolveApiAssetUrl(s.fotoPrincipal) } : null,
     location: s.ubicacion || 'Ubicación por confirmar',
     pieces: null,
     status: mapEstado(s.estado),

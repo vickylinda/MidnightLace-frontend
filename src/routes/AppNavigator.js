@@ -134,6 +134,7 @@ export default function AppNavigator() {
   refetchRef.current = refetch;
   const isSubastador = hasRole('subastador');
   const canCreateProduct = !isSubastador;
+  const hiddenBottomNavItemIds = isSubastador ? ['actividad'] : [];
 
   const [selectedPenalty, setSelectedPenalty] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -261,6 +262,15 @@ export default function AppNavigator() {
     if (!isLoading && currentRoute === ROUTES.createProduct && !canCreateProduct) {
       navigateTo(ROUTES.productCatalog, { replace: true });
     }
+
+    if (
+      !isLoading &&
+      isSubastador &&
+      (currentRoute === ROUTES.myActivity ||
+        currentRoute === ROUTES.penaltyPayment)
+    ) {
+      navigateTo(ROUTES.home, { replace: true });
+    }
   }, [canCreateProduct, currentRoute, isLoading, isSubastador]);
 
   function navigateTo(route, options = {}) {
@@ -380,7 +390,7 @@ export default function AppNavigator() {
       navigateTo(ROUTES.auctions);
     }
 
-    if (itemId === 'actividad') {
+    if (itemId === 'actividad' && !isSubastador) {
       navigateTo(ROUTES.myActivity);
     }
 
@@ -433,6 +443,7 @@ export default function AppNavigator() {
           : ''
       }
       enableSwipeBack={canNavigateBack}
+      hiddenBottomNavItemIds={hiddenBottomNavItemIds}
       floatingAction={
         (currentRoute === ROUTES.auctions && isSubastador) ||
         (currentRoute === ROUTES.productCatalog && canCreateProduct) ? (
@@ -475,7 +486,9 @@ export default function AppNavigator() {
       ) : currentRoute === ROUTES.productCatalog ? (
         <ProductCatalogScreen
           canCreateProduct={canCreateProduct}
+          isSubastador={isSubastador}
           onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+          onGoAuctions={() => navigateTo(ROUTES.auctions)}
           onGoHome={() => navigateTo(ROUTES.home)}
         />
       ) : currentRoute === ROUTES.home ? (

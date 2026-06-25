@@ -143,11 +143,6 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
     try {
       const formData = new FormData();
 
-      const descripcionCatalogo = [
-        form.name.trim(),
-        form.catalogDescription.trim(),
-      ].join('\n');
-
       const descripcionCompletaParts = [form.completeDescription.trim()];
 
       if (form.relevantDetails.trim()) {
@@ -156,7 +151,8 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
         );
       }
 
-      formData.append('descripcionCatalogo', descripcionCatalogo);
+      formData.append('nombre', form.name.trim());
+      formData.append('descripcionCatalogo', form.catalogDescription.trim());
       formData.append('descripcionCompleta', descripcionCompletaParts.join('\n\n'));
       formData.append('declaracionPropiedad', String(legalDeclaration));
       formData.append('precioBase', String(parseFloat(form.precioBase)));

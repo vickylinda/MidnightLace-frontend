@@ -30,6 +30,7 @@ export default function AppLayout({
   children,
   floatingAction,
   isBottomNavigationInteractive = true,
+  hiddenBottomNavItemIds,
   onBackPress,
   onNavItemPress,
   enableSwipeBack = true,
@@ -227,6 +228,7 @@ export default function AppLayout({
         {variant === 'app' ? (
           <BottomNavigation
             activeItem={selectedNavItem}
+            hiddenItemIds={hiddenBottomNavItemIds}
             isInteractive={isBottomNavigationInteractive}
             onItemPress={onNavItemPress}
           />

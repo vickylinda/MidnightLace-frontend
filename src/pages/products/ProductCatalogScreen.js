@@ -28,7 +28,7 @@ const STATUS_MAP = {
   vendido: { status: 'sold', statusLabel: 'vendido' },
 };
 
-const EMPTY_PRODUCTS_GIF_URL = 'https://media1.tenor.com/m/FmgqXydqf_UAAAAC/tantrum.gif';
+const EMPTY_PRODUCTS_GIF_URL = 'https://media.tenor.com/cUpWnIdngvwAAAAC/sad-happy.gif';
 
 function CloseIcon() {
   return (
@@ -133,19 +133,40 @@ function getProductPhotos(producto) {
   });
 }
 
+function cleanProductText(value) {
+  const text = String(value ?? '').trim();
+  return text && text.toLowerCase() !== 'no posee' ? text : '';
+}
+
 function splitCatalogDescription(producto) {
-  const catalogText = String(producto.descripcionCatalogo ?? '').trim();
+  const catalogText = cleanProductText(
+    producto.descripcionCatalogo ?? producto.descripcion_catalogo
+  );
   const catalogLines = catalogText
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => cleanProductText(line))
+    .filter(Boolean);
+
+  const completeDescriptionLines = cleanProductText(
+    producto.descripcionCompleta ?? producto.descripcion_completa
+  )
+    .split('\n')
+    .map((line) => cleanProductText(line))
     .filter(Boolean);
 
   const title =
-    String(producto.nombre ?? '').trim() ||
+    cleanProductText(producto.nombre) ||
+    cleanProductText(producto.titulo) ||
+    cleanProductText(producto.title) ||
+    cleanProductText(producto.name) ||
     catalogLines[0] ||
-    'Producto sin nombre';
+    completeDescriptionLines[0] ||
+    ((producto.identificador ?? producto.id) ? `Producto #${producto.identificador ?? producto.id}` : 'Producto sin nombre');
 
-  const shortDescription = catalogLines.slice(1).join('\n').trim() || null;
+  const shortDescription =
+    cleanProductText(producto.descripcionBreve ?? producto.descripcion_breve) ||
+    (catalogLines.length > 1 ? catalogLines.slice(1).join('\n').trim() : catalogLines[0]) ||
+    null;
 
   return {
     title,
@@ -201,6 +222,18 @@ function parseArtisticDetails(producto) {
   ].filter((item) => item.value);
 }
 
+function appendArtisticDetails(description, artisticDetails) {
+  if (artisticDetails.length === 0) {
+    return description;
+  }
+
+  const detailText = artisticDetails
+    .map((item) => `${item.label}: ${item.value}`)
+    .join('\n');
+
+  return [description, detailText].filter(Boolean).join('\n\n');
+}
+
 function mapProduct(producto) {
   const mapped = STATUS_MAP[producto.estadoProducto] ?? {
     status: 'pending',
@@ -209,8 +242,13 @@ function mapProduct(producto) {
 
   const { title, shortDescription } = splitCatalogDescription(producto);
 
-  const completeDescription =
-    String(producto.descripcionCompleta ?? '').trim() || null;
+  const baseCompleteDescription =
+    String(producto.descripcionCompleta ?? producto.descripcion_completa ?? '').trim() || null;
+  const artisticDetails = parseArtisticDetails(producto);
+  const completeDescription = appendArtisticDetails(
+    baseCompleteDescription,
+    artisticDetails
+  );
 
   const imageSources = getProductPhotos(producto);
   const imageSource = imageSources[0] ?? null;
@@ -232,7 +270,7 @@ function mapProduct(producto) {
   const rawId = producto.identificador ?? null;
 
   return {
-    artisticDetails: parseArtisticDetails(producto),
+    artisticDetails,
     completeDescription,
     description: shortDescription,
     id: String(rawId ?? producto.id ?? title),
@@ -354,18 +392,6 @@ function ProductDetailsModal({ product, onClose, onReviewConditions }) {
               </View>
             ) : null}
 
-            {product.artisticDetails.length > 0 ? (
-              <View style={styles.modalInfoBox}>
-                <Text style={styles.modalInfoTitle}>Información adicional</Text>
-
-                {product.artisticDetails.map((item) => (
-                  <View key={item.label} style={styles.modalDetailRow}>
-                    <Text style={styles.modalDetailLabel}>{item.label}:</Text>
-                    <Text style={styles.modalDetailValue}>{item.value}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
             {onReviewConditions ? (
               <PrimaryButton onPress={onReviewConditions} style={styles.modalReviewButton}>
                 Revisar condiciones
@@ -378,7 +404,13 @@ function ProductDetailsModal({ product, onClose, onReviewConditions }) {
   );
 }
 
-function EmptyProductsNotice({ canCreateProduct, onCreateProduct, onGoHome }) {
+function EmptyProductsNotice({
+  canCreateProduct,
+  isSubastador,
+  onCreateProduct,
+  onGoAuctions,
+  onGoHome,
+}) {
   return (
     <View style={styles.emptyCard}>
       <Image
@@ -389,19 +421,28 @@ function EmptyProductsNotice({ canCreateProduct, onCreateProduct, onGoHome }) {
       />
 
       <Text style={styles.emptyTitle}>
-        ups! parece que no publicaste ningun producto todavía...
+        {isSubastador
+          ? 'ups! parece que no tenes permisos para crear productos...'
+          : 'ups! parece que no publicaste ningun producto todavía...'}
       </Text>
-      <Text style={styles.emptyMessage}>pero nunca es tarde!</Text>
+      <Text style={styles.emptyMessage}>
+        {isSubastador ? 'pero podes crear subastas!' : 'pero nunca es tarde!'}
+      </Text>
 
       <View style={styles.emptyActions}>
-        {canCreateProduct ? (
+        {isSubastador ? (
+          <PrimaryButton onPress={onGoAuctions} style={styles.emptyButton}>
+            Ir a subastas
+          </PrimaryButton>
+        ) : canCreateProduct ? (
           <PrimaryButton onPress={onCreateProduct} style={styles.emptyButton}>
             Crear producto
           </PrimaryButton>
-        ) : null}
-        <PrimaryButton onPress={onGoHome} style={styles.emptyButton}>
-          Volver a home
-        </PrimaryButton>
+        ) : (
+          <PrimaryButton onPress={onGoHome} style={styles.emptyButton}>
+            Volver a home
+          </PrimaryButton>
+        )}
       </View>
     </View>
   );
@@ -477,7 +518,9 @@ const EMPTY_CONDITIONS = { product: null, data: null, loading: false, error: nul
 
 export default function ProductCatalogScreen({
   canCreateProduct = false,
+  isSubastador = false,
   onCreateProduct,
+  onGoAuctions,
   onGoHome,
 }) {
   const [products, setProducts] = useState([]);
@@ -552,7 +595,9 @@ export default function ProductCatalogScreen({
       ) : products.length === 0 ? (
         <EmptyProductsNotice
           canCreateProduct={canCreateProduct}
+          isSubastador={isSubastador}
           onCreateProduct={onCreateProduct}
+          onGoAuctions={onGoAuctions}
           onGoHome={onGoHome}
         />
       ) : (
@@ -897,21 +942,5 @@ modalPriceValue: {
   fontFamily: fonts.semiBold,
   fontSize: 15,
   lineHeight: 19,
-},
-modalDetailRow: {
-  marginTop: 8,
-},
-modalDetailLabel: {
-  color: colors.textBurgundy,
-  fontFamily: fonts.bold,
-  fontSize: 14,
-  lineHeight: 18,
-},
-modalDetailValue: {
-  color: colors.textBurgundy,
-  fontFamily: fonts.regular,
-  fontSize: 14,
-  lineHeight: 20,
-  marginTop: 2,
 },
 });

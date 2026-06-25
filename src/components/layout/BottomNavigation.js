@@ -27,7 +27,7 @@ function HomeIcon({ color }) {
   );
 }
 
-function AuctionsIcon({ color }) {
+export function AuctionsIcon({ color }) {
   return (
     <Svg width={25} height={25} viewBox="0 0 32 32" fill="none">
       <Path
@@ -82,11 +82,15 @@ function ProfileIcon({ color }) {
 
 export default function BottomNavigation({
   activeItem = 'inicio',
+  hiddenItemIds = [],
   isInteractive = true,
   onItemPress,
 }) {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, BOTTOM_NAV_MIN_BOTTOM_PADDING);
+  const visibleNavItems = navItems.filter(
+    (item) => !hiddenItemIds.includes(item.id)
+  );
 
   return (
     <View
@@ -100,7 +104,7 @@ export default function BottomNavigation({
       ]}
     >
       <View style={styles.container}>
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = item.id === activeItem;
           const color = isActive ? colors.burgundy : colors.cream;

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { AuctionsIcon } from '../layout/BottomNavigation';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 
@@ -37,20 +38,6 @@ function ProductIcon() {
   );
 }
 
-function AuctionIcon() {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M9 7L15 13M7 9L13 15M6 10L10 6L16 12L12 16L6 10ZM14 15L20 21"
-        stroke={colors.burgundy}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.8}
-      />
-    </Svg>
-  );
-}
-
 export default function AuctionSpeedDial({ onCreateAuction, onCreateProduct }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -71,7 +58,7 @@ export default function AuctionSpeedDial({ onCreateAuction, onCreateProduct }) {
             >
               <Text style={styles.optionText}>Crear subasta</Text>
               <View style={styles.optionIcon}>
-                <AuctionIcon />
+                <AuctionsIcon color={colors.burgundy} />
               </View>
             </Pressable>
           ) : null}
