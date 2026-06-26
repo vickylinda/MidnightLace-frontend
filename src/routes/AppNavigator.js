@@ -4,13 +4,14 @@ import * as ExpoSplashScreen from 'expo-splash-screen';
 import { Platform } from 'react-native';
 
 import { useNotifications } from '../context/NotificationsContext';
-import { loadSession } from '../utils/session';
+import { hasRole, loadSession } from '../utils/session';
 
 import AuctionSpeedDial from '../components/auctions/AuctionSpeedDial';
 import AppLayout from '../components/layout/AppLayout';
 import AuctionDetailScreen from '../pages/auctions/AuctionDetailScreen';
 import AuctionProductScreen from '../pages/auctions/AuctionProductScreen';
 import AllAuctionsScreen from '../pages/auctions/AllAuctionsScreen';
+import CreateAuctionScreen from '../pages/CreateAuctionScreen';
 import CreateProductScreen from '../pages/products/CreateProductScreen';
 import ForgotPasswordScreen from '../pages/auth/ForgotPasswordScreen';
 import ForgotPasswordVerificationScreen from '../pages/auth/ForgotPasswordVerificationScreen';
@@ -27,11 +28,11 @@ import SignUpFinalScreen from '../pages/signup/SignUpFinalScreen';
 import SignUpScreen from '../pages/signup/SignUpScreen';
 import SignUpVerificationScreen from '../pages/signup/SignUpVerificationScreen';
 import SplashScreen from '../pages/splash/SplashScreen';
-
 const ROUTES = {
   auctionDetail: 'auctionDetail',
   auctionProduct: 'auctionProduct',
   auctions: 'auctions',
+  createAuction: 'createAuction',
   createProduct: 'createProduct',
   forgotPassword: 'forgotPassword',
   forgotPasswordVerification: 'forgotPasswordVerification',
@@ -54,6 +55,7 @@ const ROUTE_PATHS = {
   [ROUTES.auctionDetail]: '/subasta',
   [ROUTES.auctionProduct]: '/subasta/producto',
   [ROUTES.auctions]: '/auctions',
+  [ROUTES.createAuction]: '/auctions/new',
   [ROUTES.createProduct]: '/products/new',
   [ROUTES.forgotPassword]: '/forgot-password',
   [ROUTES.forgotPasswordVerification]: '/forgot-password/verification',
@@ -130,7 +132,11 @@ export default function AppNavigator() {
   connectRef.current = connect;
   disconnectRef.current = disconnect;
   refetchRef.current = refetch;
+  const isSubastador = hasRole('subastador');
+  const canCreateProduct = !isSubastador;
+  const hiddenBottomNavItemIds = isSubastador ? ['actividad'] : [];
 
+  const [selectedPenalty, setSelectedPenalty] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [fontsLoaded] = useFonts({
     GreatVibes_400Regular: require('@expo-google-fonts/great-vibes/400Regular/GreatVibes_400Regular.ttf'),
@@ -224,6 +230,12 @@ export default function AppNavigator() {
   }, [currentRoute, selectedAuction]);
 
   useEffect(() => {
+    if (currentRoute !== ROUTES.penaltyPayment && selectedPenalty) {
+      setSelectedPenalty(null);
+    }
+  }, [currentRoute, selectedPenalty]);
+
+  useEffect(() => {
     if (
       !isLoading &&
       currentRoute === ROUTES.auctionProduct &&
@@ -241,6 +253,25 @@ export default function AppNavigator() {
       setSelectedAuctionProduct(null);
     }
   }, [currentRoute, selectedAuctionProduct]);
+
+  useEffect(() => {
+    if (!isLoading && currentRoute === ROUTES.createAuction && !isSubastador) {
+      navigateTo(ROUTES.auctions, { replace: true });
+    }
+
+    if (!isLoading && currentRoute === ROUTES.createProduct && !canCreateProduct) {
+      navigateTo(ROUTES.productCatalog, { replace: true });
+    }
+
+    if (
+      !isLoading &&
+      isSubastador &&
+      (currentRoute === ROUTES.myActivity ||
+        currentRoute === ROUTES.penaltyPayment)
+    ) {
+      navigateTo(ROUTES.home, { replace: true });
+    }
+  }, [canCreateProduct, currentRoute, isLoading, isSubastador]);
 
   function navigateTo(route, options = {}) {
     if (route === currentRoute) {
@@ -290,6 +321,10 @@ export default function AppNavigator() {
 
     if (route === ROUTES.penaltyPayment) {
       return ROUTES.myActivity;
+    }
+
+    if (route === ROUTES.createAuction) {
+      return ROUTES.auctions;
     }
 
     if (route === ROUTES.createProduct) {
@@ -355,7 +390,7 @@ export default function AppNavigator() {
       navigateTo(ROUTES.auctions);
     }
 
-    if (itemId === 'actividad') {
+    if (itemId === 'actividad' && !isSubastador) {
       navigateTo(ROUTES.myActivity);
     }
 
@@ -389,16 +424,14 @@ export default function AppNavigator() {
 
   return (
     <AppLayout
-      activeNavItem={
-        currentRoute === ROUTES.auctions
+      activeItem={
+        currentRoute === ROUTES.auctions ||
+        currentRoute === ROUTES.createAuction ||
+        currentRoute === ROUTES.auctionDetail ||
+        currentRoute === ROUTES.auctionProduct
           ? 'subastas'
-          : currentRoute === ROUTES.auctionDetail
-          ? 'subastas'
-          : currentRoute === ROUTES.auctionProduct
-          ? 'subastas'
-          : currentRoute === ROUTES.createProduct
-          ? 'catalogo'
-          : currentRoute === ROUTES.productCatalog
+          : currentRoute === ROUTES.createProduct ||
+            currentRoute === ROUTES.productCatalog
           ? 'catalogo'
           : currentRoute === ROUTES.home
           ? 'inicio'
@@ -410,10 +443,21 @@ export default function AppNavigator() {
           : ''
       }
       enableSwipeBack={canNavigateBack}
+      hiddenBottomNavItemIds={hiddenBottomNavItemIds}
       floatingAction={
-        currentRoute === ROUTES.productCatalog ? (
+        (currentRoute === ROUTES.auctions && isSubastador) ||
+        (currentRoute === ROUTES.productCatalog && canCreateProduct) ? (
           <AuctionSpeedDial
-            onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+            onCreateAuction={
+              currentRoute === ROUTES.auctions && isSubastador
+                ? () => navigateTo(ROUTES.createAuction)
+                : undefined
+            }
+            onCreateProduct={
+              currentRoute === ROUTES.productCatalog && canCreateProduct
+                ? () => navigateTo(ROUTES.createProduct)
+                : undefined
+            }
           />
         ) : null
       }
@@ -432,14 +476,19 @@ export default function AppNavigator() {
           <AuctionDetailScreen onProductPress={handleAuctionProductPress} />
         ) : null
       ) : currentRoute === ROUTES.auctions ? (
-        <AllAuctionsScreen onAuctionPress={handleAuctionPress} />
+        <AllAuctionsScreen isSubastador={isSubastador} onAuctionPress={handleAuctionPress} />
+      ) : currentRoute === ROUTES.createAuction ? (
+        <CreateAuctionScreen onSubmitSuccess={() => navigateTo(ROUTES.auctions)} />
       ) : currentRoute === ROUTES.createProduct ? (
         <CreateProductScreen
           onSubmitSuccess={() => navigateTo(ROUTES.productCatalog)}
         />
       ) : currentRoute === ROUTES.productCatalog ? (
         <ProductCatalogScreen
+          canCreateProduct={canCreateProduct}
+          isSubastador={isSubastador}
           onCreateProduct={() => navigateTo(ROUTES.createProduct)}
+          onGoAuctions={() => navigateTo(ROUTES.auctions)}
           onGoHome={() => navigateTo(ROUTES.home)}
         />
       ) : currentRoute === ROUTES.home ? (
@@ -448,9 +497,9 @@ export default function AppNavigator() {
           onViewAllAuctions={() => navigateTo(ROUTES.auctions)}
         />
       ) : currentRoute === ROUTES.myActivity ? (
-        <MyActivityScreen onPayPenalty={() => navigateTo(ROUTES.penaltyPayment)} />
+        <MyActivityScreen onPayPenalty={(multa) => { setSelectedPenalty(multa); navigateTo(ROUTES.penaltyPayment); }} />
       ) : currentRoute === ROUTES.penaltyPayment ? (
-        <PenaltyPaymentScreen onPaid={() => navigateTo(ROUTES.myActivity)} />
+        <PenaltyPaymentScreen multa={selectedPenalty} onPaid={() => navigateTo(ROUTES.myActivity)} />
       ) : currentRoute === ROUTES.profile ? (
         <ProfileScreen onLogout={() => {
           disconnect();

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { AuctionsIcon } from '../layout/BottomNavigation';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 
@@ -37,35 +38,49 @@ function ProductIcon() {
   );
 }
 
-export default function AuctionSpeedDial({ onCreateProduct }) {
+export default function AuctionSpeedDial({ onCreateAuction, onCreateProduct }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  function handleCreateProduct() {
+  function handleOption(callback) {
     setIsOpen(false);
-    onCreateProduct?.();
+    callback?.();
   }
 
   return (
     <View style={styles.wrapper} pointerEvents="box-none">
       {isOpen ? (
         <View style={styles.options}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleCreateProduct}
-            style={styles.option}
-          >
-            <Text style={styles.optionText}>Crear producto</Text>
-            <View style={styles.optionIcon}>
-              <ProductIcon />
-            </View>
-          </Pressable>
+          {onCreateAuction ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOption(onCreateAuction)}
+              style={styles.option}
+            >
+              <Text style={styles.optionText}>Crear subasta</Text>
+              <View style={styles.optionIcon}>
+                <AuctionsIcon color={colors.burgundy} />
+              </View>
+            </Pressable>
+          ) : null}
+          {onCreateProduct ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => handleOption(onCreateProduct)}
+              style={styles.option}
+            >
+              <Text style={styles.optionText}>Crear producto</Text>
+              <View style={styles.optionIcon}>
+                <ProductIcon />
+              </View>
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
 
       <Pressable
         accessibilityLabel={isOpen ? 'Cerrar acciones' : 'Abrir acciones'}
         accessibilityRole="button"
-        onPress={() => setIsOpen((currentValue) => !currentValue)}
+        onPress={() => setIsOpen((v) => !v)}
         style={styles.mainButton}
       >
         <PlusIcon isOpen={isOpen} />

@@ -25,10 +25,12 @@ const BOTTOM_NAV_MIN_BOTTOM_PADDING = 5;
 const KEYBOARD_INPUT_EXTRA_OFFSET = 180;
 
 export default function AppLayout({
+  activeItem,
   activeNavItem = 'inicio',
   children,
   floatingAction,
   isBottomNavigationInteractive = true,
+  hiddenBottomNavItemIds,
   onBackPress,
   onNavItemPress,
   enableSwipeBack = true,
@@ -36,6 +38,7 @@ export default function AppLayout({
   showNotifications = true,
   variant = 'auth',
 }) {
+  const selectedNavItem = activeItem || activeNavItem;
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef(null);
@@ -224,7 +227,8 @@ export default function AppLayout({
 
         {variant === 'app' ? (
           <BottomNavigation
-            activeItem={activeNavItem}
+            activeItem={selectedNavItem}
+            hiddenItemIds={hiddenBottomNavItemIds}
             isInteractive={isBottomNavigationInteractive}
             onItemPress={onNavItemPress}
           />
