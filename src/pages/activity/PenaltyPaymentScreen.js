@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { listPaymentMethods } from '../../services/paymentMethodsApi';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
@@ -128,6 +129,43 @@ function buildMethodDetail(m) {
   return '';
 }
 
+function extractPaymentMethods(response) {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.datos)) return response.datos;
+  if (Array.isArray(response?.data)) return response.data;
+  return [];
+}
+
+function isEnabledFlag(value, defaultValue = false) {
+  if (value == null) return defaultValue;
+  if (typeof value === 'boolean') return value;
+  return ['si', 'true', '1'].includes(String(value).trim().toLowerCase());
+}
+
+function parseMoney(value) {
+  if (typeof value === 'number') return value;
+  const normalized = String(value || '')
+    .replace(/[^\d,.-]/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function getMethodAvailableAmount(method) {
+  if (method?.tipo !== 'chequeCertificado') return null;
+  const rawAmount =
+    method.detalle?.montoDisponible ??
+    method.detalle?.montoGarantizado ??
+    method.detalle?.amount;
+  return parseMoney(rawAmount);
+}
+
+function hasInsufficientFunds(method, amount) {
+  const available = getMethodAvailableAmount(method);
+  return available != null && available < amount;
+}
+
 export default function PenaltyPaymentScreen({ multa, onPaid }) {
   const [methods, setMethods] = useState([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
@@ -135,16 +173,18 @@ export default function PenaltyPaymentScreen({ multa, onPaid }) {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState('idle');
+  const paymentProgress = useRef(new Animated.Value(0)).current;
 
   async function loadMethods() {
     setLoadingMethods(true);
     setMethodsError('');
     try {
-      const res = await apiFetch('/v1/medios-de-pago');
-      const all = res.datos || res || [];
-      const valid = all.filter((m) => m.verificado === 'si' && m.activo === 'si');
-      setMethods(valid);
-      if (valid.length > 0) setSelectedMethod(valid[0].identificador);
+      const res = await listPaymentMethods();
+      const all = extractPaymentMethods(res);
+      const active = all.filter((m) => isEnabledFlag(m.activo, true));
+      setMethods(active);
+      setSelectedMethod(active[0]?.identificador || null);
     } catch (err) {
       setMethodsError(getApiErrorMessage(err, 'No se pudieron cargar los medios de pago.'));
     } finally {
@@ -158,29 +198,78 @@ export default function PenaltyPaymentScreen({ multa, onPaid }) {
 
   async function handlePay() {
     if (!selectedMethod || !multa?.identificador) return;
+    if (selectedMethodInsufficientFunds) return;
     setSubmitting(true);
     setSubmitError('');
+    setPaymentStatus('processing');
+    paymentProgress.setValue(0);
+    Animated.timing(paymentProgress, {
+      duration: 1300,
+      toValue: 0.88,
+      useNativeDriver: false,
+    }).start();
     try {
-      await apiFetch(`/v1/mi/multas/${multa.identificador}/pagar`, {
-        method: 'POST',
-        body: { idMedioDePago: selectedMethod },
+      await Promise.all([
+        apiFetch(`/v1/mi/multas/${multa.identificador}/pagar`, {
+          method: 'POST',
+          body: { idMedioPago: selectedMethod },
+        }),
+        new Promise((resolve) => setTimeout(resolve, 1200)),
+      ]);
+      Animated.timing(paymentProgress, {
+        duration: 260,
+        toValue: 1,
+        useNativeDriver: false,
+      }).start(() => {
+        setPaymentStatus('paid');
+        setTimeout(() => onPaid?.(), 650);
       });
-      onPaid?.();
     } catch (err) {
+      paymentProgress.stopAnimation();
+      Animated.timing(paymentProgress, {
+        duration: 180,
+        toValue: 0,
+        useNativeDriver: false,
+      }).start();
+      setPaymentStatus('idle');
       setSubmitError(getApiErrorMessage(err, 'No se pudo procesar el pago.'));
-    } finally {
       setSubmitting(false);
     }
   }
 
-  const canPay = selectedMethod !== null && !submitting;
+  const penaltyAmount = parseMoney(multa?.penalty);
+  const selectedPaymentMethod = methods.find(
+    (method) => method.identificador === selectedMethod
+  );
+  const selectedMethodInsufficientFunds = hasInsufficientFunds(
+    selectedPaymentMethod,
+    penaltyAmount
+  );
+  const paymentFillWidth = paymentProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+  const canPay =
+    selectedMethod !== null &&
+    !selectedMethodInsufficientFunds &&
+    !submitting &&
+    paymentStatus !== 'paid';
+  const payButtonLabel = selectedMethodInsufficientFunds
+    ? 'Saldo insuficiente'
+    : paymentStatus === 'paid'
+    ? 'Pago realizado'
+    : submitting
+    ? 'Procesando...'
+    : `Pagar ${multa?.penalty || ''}`;
 
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Pagar multa</Text>
 
       <View style={styles.warningBox}>
-        <WarningIcon />
+        <View style={styles.warningIconWrap}>
+          <WarningIcon />
+        </View>
         <View style={styles.warningTextBlock}>
           <Text style={styles.warningTitle}>Incumplimiento de pago</Text>
           <Text style={styles.warningText}>
@@ -225,22 +314,34 @@ export default function PenaltyPaymentScreen({ multa, onPaid }) {
           </View>
         ) : methods.length === 0 ? (
           <Text style={styles.emptyMethods}>
-            No tenés medios de pago verificados. Agregá uno desde tu perfil.
+            No tenés medios de pago activos. Agregá uno desde tu perfil.
           </Text>
         ) : (
-          methods.map((m) => (
-            <Pressable
-              key={m.identificador}
-              onPress={() => setSelectedMethod(m.identificador)}
-              style={styles.paymentOption}
-            >
-              <RadioButton isSelected={selectedMethod === m.identificador} />
-              <View style={styles.paymentTextBlock}>
-                <Text style={styles.paymentLabel}>{buildMethodLabel(m)}</Text>
-                <Text style={styles.paymentDetail}>{buildMethodDetail(m)}</Text>
-              </View>
-            </Pressable>
-          ))
+          methods.map((m) => {
+            const insufficientFunds = hasInsufficientFunds(m, penaltyAmount);
+            return (
+              <Pressable
+                key={m.identificador}
+                onPress={() => setSelectedMethod(m.identificador)}
+                style={styles.paymentOption}
+              >
+                <RadioButton isSelected={selectedMethod === m.identificador} />
+                <View style={styles.paymentTextBlock}>
+                  <Text style={styles.paymentLabel}>{buildMethodLabel(m)}</Text>
+                  <Text
+                    style={[
+                      styles.paymentDetail,
+                      insufficientFunds ? styles.paymentDetailDanger : null,
+                    ]}
+                  >
+                    {insufficientFunds
+                      ? `${buildMethodDetail(m)} · saldo insuficiente`
+                      : buildMethodDetail(m)}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })
         )}
       </View>
 
@@ -261,11 +362,20 @@ export default function PenaltyPaymentScreen({ multa, onPaid }) {
           accessibilityState={{ disabled: !canPay }}
           disabled={!canPay}
           onPress={handlePay}
-          style={[styles.payButton, !canPay ? styles.payButtonDisabled : null]}
+          style={[
+            styles.payButton,
+            !canPay && paymentStatus !== 'paid' ? styles.payButtonDisabled : null,
+          ]}
         >
-          <Text style={styles.payButtonText}>
-            {submitting ? 'Procesando...' : `Pagar ${multa?.penalty || ''}`}
-          </Text>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.payButtonFill,
+              { width: paymentFillWidth },
+              paymentStatus === 'paid' ? styles.payButtonFillDone : null,
+            ]}
+          />
+          <Text style={styles.payButtonText}>{payButtonLabel}</Text>
         </Pressable>
       </View>
     </View>
@@ -286,32 +396,43 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   warningBox: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(242, 211, 200, 0.66)',
-    borderColor: colors.burgundy,
-    borderRadius: 5,
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(242, 211, 200, 0.54)',
+    borderColor: 'rgba(138, 74, 58, 0.22)',
+    borderRadius: 16,
     borderWidth: 1,
-    columnGap: 13,
+    columnGap: 11,
     flexDirection: 'row',
     marginBottom: 16,
-    minHeight: 76,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    minHeight: 82,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
+  },
+  warningIconWrap: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(159, 2, 29, 0.12)',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    marginTop: 1,
+    width: 36,
   },
   warningTextBlock: {
     flex: 1,
+    minWidth: 0,
   },
   warningTitle: {
-    color: '#2A0E0E',
+    color: colors.burgundy,
     fontFamily: fonts.bold,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 20,
+    marginBottom: 2,
   },
   warningText: {
-    color: '#2A0E0E',
+    color: colors.cocoa,
     fontFamily: fonts.regular,
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 13,
+    lineHeight: 17,
   },
   card: {
     backgroundColor: 'rgba(242, 211, 200, 0.5)',
@@ -459,6 +580,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
   },
+  paymentDetailDanger: {
+    color: colors.burgundy,
+    fontFamily: fonts.medium,
+  },
   submitError: {
     color: colors.burgundy,
     fontFamily: fonts.regular,
@@ -497,7 +622,18 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     height: 45,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: '100%',
+  },
+  payButtonFill: {
+    backgroundColor: colors.textBurgundy,
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    top: 0,
+  },
+  payButtonFillDone: {
+    backgroundColor: '#7FAE76',
   },
   payButtonDisabled: {
     backgroundColor: 'rgba(159, 2, 29, 0.38)',
@@ -506,5 +642,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontFamily: fonts.bold,
     fontSize: 15,
+    zIndex: 1,
   },
 });

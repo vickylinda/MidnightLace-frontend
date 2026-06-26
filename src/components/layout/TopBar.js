@@ -119,8 +119,12 @@ export default function TopBar({
   const logoHeight = logoWidth / LOGO_RATIO;
 
   const ctx = useNotifications();
-  const notifications = ctx?.notifications ?? [];
-  const unreadCount = ctx?.unreadCount ?? 0;
+  const notifications = (ctx?.notifications ?? []).filter(
+    (notification) => notification.tipo !== 'medio_verificado'
+  );
+  const unreadCount = notifications.filter(
+    (notification) => notification.leida === 'no'
+  ).length;
   const markAsRead = ctx?.markAsRead ?? (() => {});
   const refetchNotifications = ctx?.refetch ?? (() => {});
 

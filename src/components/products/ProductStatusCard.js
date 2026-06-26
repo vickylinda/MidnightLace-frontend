@@ -36,8 +36,10 @@ export default function ProductStatusCard({
   action,
   onPress,
   owner,
+  ownerLabel = 'Publicado por',
   status,
   statusLabel,
+  statusNote,
   title,
 }) {
   const BodyContainer = onPress ? Pressable : View;
@@ -61,7 +63,7 @@ export default function ProductStatusCard({
 
         <View style={styles.content}>
           <Text style={styles.title}>{title}</Text>
-          {owner ? <Text style={styles.owner}>Publicado por @{owner}</Text> : null}
+          {owner ? <Text style={styles.owner}>{ownerLabel} {owner}</Text> : null}
 
           <View style={styles.statusRow}>
             <Text style={styles.statusPrefix}>Estado:</Text>
@@ -70,6 +72,7 @@ export default function ProductStatusCard({
             </View>
           </View>
 
+          {statusNote ? <Text style={styles.statusNote}>{statusNote}</Text> : null}
           {description ? <Text style={styles.description}>{description}</Text> : null}
         </View>
       </BodyContainer>
@@ -159,6 +162,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 13,
+  },
+  statusNote: {
+    color: colors.cocoa,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 8,
   },
   action: {
     marginTop: 12,

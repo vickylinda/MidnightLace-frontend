@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -168,10 +168,12 @@ function paymentPresentation(payment) {
   }
 
   if (payment.tipo === 'chequeCertificado') {
+    const availableAmount =
+      detail.montoDisponible ?? detail.montoGarantizado ?? 0;
     return {
       icon: 'check',
       lines: [
-        `${payment.moneda || 'ARS'} ${detail.montoGarantizado || 0}`,
+        `${payment.moneda || 'ARS'} ${availableAmount}`,
         `Entrega: ${detail.fechaEntrega || '-'}`,
       ],
       title: 'Cheque certificado',

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -9,6 +9,7 @@ import LineSelectField from '../components/forms/fields/LineSelectField';
 import LineTextField from '../components/forms/fields/LineTextField';
 import { colors } from '../theme/colors';
 import { fonts } from '../theme/fonts';
+import { resolveApiAssetUrl } from '../utils/config';
 import { apiFetch, getApiErrorMessage } from '../utils/http';
 import { toUploadValue } from '../services/profileApi';
 
@@ -206,6 +207,172 @@ function buildCoverFile(asset) {
   };
 }
 
+function AuctionProgress({ currentStep = 1 }) {
+  const steps = [
+    { label: 'Datos', value: 1 },
+    { label: 'Catalogo', value: 2 },
+  ];
+
+  return (
+    <View style={styles.progressContainer}>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: currentStep === 1 ? '0%' : '100%' }]} />
+      </View>
+      <View style={styles.progressSteps}>
+        {steps.map((step) => {
+          const isActive = step.value <= currentStep;
+
+          return (
+            <View key={step.value} style={styles.progressStep}>
+              <View style={[styles.progressCircle, isActive ? styles.progressCircleActive : null]}>
+                <Text style={styles.progressNumber}>{step.value}</Text>
+              </View>
+              <Text style={styles.progressLabel}>{step.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function cleanProductText(value) {
+  const text = String(value ?? '').trim();
+  return text && text.toLowerCase() !== 'no posee' ? text : '';
+}
+
+function normalizePhotoSource(photo) {
+  if (!photo) return null;
+  if (typeof photo === 'string') return { uri: resolveApiAssetUrl(photo) };
+
+  const photoPath =
+    photo.url ??
+    photo.uri ??
+    photo.ruta ??
+    photo.path ??
+    photo.archivo ??
+    photo.nombreArchivo ??
+    photo.foto;
+
+  return photoPath ? { uri: resolveApiAssetUrl(photoPath) } : null;
+}
+
+function getProductPhotos(producto) {
+  const photos = [];
+  if (producto.fotoPrincipal) photos.push(producto.fotoPrincipal);
+
+  [
+    producto.fotos,
+    producto.imagenes,
+    producto.fotosProducto,
+    producto.urlsFotos,
+    producto.archivos,
+  ].forEach((list) => {
+    if (Array.isArray(list)) photos.push(...list);
+  });
+
+  return photos.map(normalizePhotoSource).filter(Boolean);
+}
+
+function formatPrice(value, currency) {
+  const price = Number(String(value ?? '').replace(',', '.'));
+  if (!Number.isFinite(price)) return null;
+
+  try {
+    return new Intl.NumberFormat('es-AR', {
+      currency: String(currency || 'ARS').toUpperCase(),
+      maximumFractionDigits: price % 1 === 0 ? 0 : 2,
+      style: 'currency',
+    }).format(price);
+  } catch {
+    return `${currency || 'ARS'} ${price}`;
+  }
+}
+
+function getSuggestedCommission(value) {
+  const price = Number(String(value ?? '').replace(',', '.'));
+  if (!Number.isFinite(price)) return '';
+  return String(Math.max(1, Math.round(price * 0.1)));
+}
+
+function mapPoolProduct(producto) {
+  const catalogText = cleanProductText(producto.descripcionCatalogo ?? producto.descripcion_catalogo);
+  const completeText = cleanProductText(producto.descripcionCompleta ?? producto.descripcion_completa);
+  const photos = getProductPhotos(producto);
+  const owner = cleanProductText(producto.publicadoPor ?? producto.nombreUsuario ?? producto.owner);
+  const id = producto.identificador ?? producto.id;
+
+  return {
+    id: String(id),
+    rawId: id,
+    title:
+      cleanProductText(producto.nombre) ||
+      cleanProductText(producto.titulo) ||
+      (id ? `Producto #${id}` : 'Producto sin nombre'),
+    description: catalogText || completeText || null,
+    imageSource: photos[0] ?? null,
+    owner: owner ? `@${owner.replace(/^@/, '')}` : producto.duenio ? `#${producto.duenio}` : null,
+    priceLabel: formatPrice(producto.precioBase, producto.moneda),
+    rawPrice: producto.precioBase,
+  };
+}
+
+function AuctionProductOption({
+  commission,
+  isSelected,
+  onCommissionChange,
+  onPress,
+  product,
+}) {
+  return (
+    <View style={[styles.productOption, isSelected ? styles.productOptionSelected : null]}>
+      <View style={styles.productOptionBody}>
+        <View style={styles.productImageFrame}>
+          {product.imageSource ? (
+            <Image source={product.imageSource} style={styles.productImage} resizeMode="cover" />
+          ) : (
+            <Text style={styles.productImageFallback}>Sin foto</Text>
+          )}
+        </View>
+        <View style={styles.productCopy}>
+          <Text style={styles.productTitle}>{product.title}</Text>
+          {product.owner ? (
+            <Text style={styles.productOwner}>Publicado por {product.owner}</Text>
+          ) : null}
+          {product.description ? (
+            <Text numberOfLines={4} style={styles.productDescription}>
+              {product.description}
+            </Text>
+          ) : null}
+          {product.priceLabel ? (
+            <Text style={styles.productPrice}>Precio base: {product.priceLabel}</Text>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.productActions}>
+        <LineTextField
+          keyboardType="numeric"
+          label="Comision"
+          onChangeText={onCommissionChange}
+          placeholder="Ej: 4500"
+          style={styles.commissionField}
+          value={commission}
+        />
+        <Pressable
+          accessibilityRole="button"
+          onPress={onPress}
+          style={[styles.selectProductButton, isSelected ? styles.selectProductButtonActive : null]}
+        >
+          <Text style={[styles.selectProductButtonText, isSelected ? styles.selectProductButtonTextActive : null]}>
+            {isSelected ? 'seleccionado' : 'seleccionar'}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function AuctionCoverPicker({ cover, onChange }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [permissionError, setPermissionError] = useState('');
@@ -334,8 +501,15 @@ function AuctionCoverPicker({ cover, onChange }) {
 }
 
 export default function CreateAuctionScreen({ onSubmitSuccess }) {
+  const [step, setStep] = useState(1);
   const [form, setForm] = useState(INITIAL_FORM);
   const [coverImage, setCoverImage] = useState(null);
+  const [createdAuction, setCreatedAuction] = useState(null);
+  const [catalogProducts, setCatalogProducts] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
+  const [commissions, setCommissions] = useState({});
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState({});
   const [loading, setLoading] = useState(false);
@@ -362,6 +536,7 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
       })(),
       categoria: requiredError(form.categoria, 'la categoría'),
       moneda: requiredError(form.moneda, 'la moneda'),
+      ubicacion: requiredError(form.ubicacion, 'la ubicación'),
       duracionItemMinutos: (() => {
         if (!form.duracionItemMinutos.trim()) return 'Completá la duración por ítem.';
         if (isNaN(duracion) || duracion < 1) return 'Debe ser un número entero mayor a 0.';
@@ -371,6 +546,51 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
   }, [form]);
 
   const hasErrors = Object.values(errors).some(Boolean);
+  const selectedProducts = useMemo(
+    () => catalogProducts.filter((product) => selectedProductIds.includes(product.id)),
+    [catalogProducts, selectedProductIds]
+  );
+
+  useEffect(() => {
+    if (step !== 2) return undefined;
+
+    let cancelled = false;
+
+    async function fetchCatalogProducts() {
+      setCatalogLoading(true);
+      setCatalogError('');
+
+      try {
+        const data = await apiFetch('/v1/subastador/productos?estado=asignado&cantidad=100');
+        const mappedProducts = (data.datos ?? []).map(mapPoolProduct);
+
+        if (cancelled) return;
+
+        setCatalogProducts(mappedProducts);
+        setCommissions((prev) => {
+          const next = { ...prev };
+          mappedProducts.forEach((product) => {
+            if (!next[product.id]) {
+              next[product.id] = getSuggestedCommission(product.rawPrice);
+            }
+          });
+          return next;
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setCatalogError(getApiErrorMessage(err, 'No pudimos cargar tus productos asignados.'));
+        }
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+
+    fetchCatalogProducts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step]);
 
   function handleChange(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -384,39 +604,97 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
     return (submitted || touched[field]) && errors[field] ? errors[field] : '';
   }
 
-  async function handleSubmit() {
+  async function createAuctionRecord() {
+    const body = new FormData();
+
+    body.append('nombre', form.nombre.trim());
+    body.append('fecha', parseFecha(form.fecha));
+    body.append('hora', parseHora(form.hora));
+    body.append('categoria', form.categoria);
+    body.append('moneda', form.moneda);
+    body.append('duracionItemMinutos', String(parseInt(form.duracionItemMinutos, 10)));
+    body.append('ubicacion', form.ubicacion.trim());
+
+    if (form.capacidadAsistentes.trim()) {
+      const n = parseInt(form.capacidadAsistentes, 10);
+      if (!isNaN(n)) body.append('capacidadAsistentes', String(n));
+    }
+    if (form.tieneDeposito) body.append('tieneDeposito', form.tieneDeposito);
+    if (form.seguridadPropia) body.append('seguridadPropia', form.seguridadPropia);
+    if (coverImage) {
+      const upload = await toUploadValue(coverImage, 'portada-subasta.jpg');
+      if (upload) body.append('fotoPortada', upload);
+    }
+
+    return apiFetch('/v1/subastador/subastas', { method: 'POST', body });
+  }
+
+  function handleCreateAuction() {
     setSubmitted(true);
     if (hasErrors) return;
 
-    setLoading(true);
     setApiError('');
+    setStep(2);
+  }
+
+  function toggleProduct(product) {
+    setSelectedProductIds((prev) =>
+      prev.includes(product.id)
+        ? prev.filter((id) => id !== product.id)
+        : [...prev, product.id]
+    );
+  }
+
+  function handleCommissionChange(productId, value) {
+    setCommissions((prev) => ({ ...prev, [productId]: value }));
+  }
+
+  async function handleFinishCatalog() {
+    if (selectedProducts.length === 0) {
+      setCatalogError('Selecciona al menos un producto para crear la subasta.');
+      return;
+    }
+
+    const invalidProduct = selectedProducts.find((product) => {
+      const value = Number(String(commissions[product.id] ?? '').replace(',', '.'));
+      return !Number.isFinite(value) || value <= 0;
+    });
+
+    if (invalidProduct) {
+      setCatalogError('Revisa las comisiones: todas tienen que ser mayores a 0.');
+      return;
+    }
+
+    setLoading(true);
+    setCatalogError('');
 
     try {
-      const body = new FormData();
+      const auction = createdAuction?.identificador ? createdAuction : await createAuctionRecord();
+      setCreatedAuction(auction);
 
-      body.append('nombre', form.nombre.trim());
-      body.append('fecha', parseFecha(form.fecha));
-      body.append('hora', parseHora(form.hora));
-      body.append('categoria', form.categoria);
-      body.append('moneda', form.moneda);
-      body.append('duracionItemMinutos', String(parseInt(form.duracionItemMinutos, 10)));
+      const catalog = await apiFetch('/v1/subastador/catalogos', {
+        method: 'POST',
+        body: {
+          descripcion: `Catalogo de ${auction.nombre}`,
+          idSubasta: auction.identificador,
+        },
+      });
 
-      if (form.ubicacion.trim()) body.append('ubicacion', form.ubicacion.trim());
-      if (form.capacidadAsistentes.trim()) {
-        const n = parseInt(form.capacidadAsistentes, 10);
-        if (!isNaN(n)) body.append('capacidadAsistentes', String(n));
+      for (let index = 0; index < selectedProducts.length; index += 1) {
+        const product = selectedProducts[index];
+        await apiFetch(`/v1/subastador/catalogos/${catalog.identificador}/items`, {
+          method: 'POST',
+          body: {
+            idProducto: product.rawId,
+            orden: index + 1,
+            comision: String(commissions[product.id]).replace(',', '.'),
+          },
+        });
       }
-      if (form.tieneDeposito) body.append('tieneDeposito', form.tieneDeposito);
-      if (form.seguridadPropia) body.append('seguridadPropia', form.seguridadPropia);
-      if (coverImage) {
-        const upload = await toUploadValue(coverImage, 'portada-subasta.jpg');
-        if (upload) body.append('fotoPortada', upload);
-      }
 
-      await apiFetch('/v1/subastador/subastas', { method: 'POST', body });
       onSubmitSuccess?.();
     } catch (err) {
-      setApiError(getApiErrorMessage(err, 'No se pudo crear la subasta.'));
+      setCatalogError(getApiErrorMessage(err, 'No pudimos agregar los productos al catalogo.'));
     } finally {
       setLoading(false);
     }
@@ -425,7 +703,10 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Crear subasta</Text>
+      <AuctionProgress currentStep={step} />
 
+      {step === 1 ? (
+        <>
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Datos obligatorios</Text>
 
@@ -489,19 +770,21 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
           placeholder="Ej: 3"
           value={form.duracionItemMinutos}
         />
-      </View>
-
-      <AuctionCoverPicker cover={coverImage} onChange={setCoverImage} />
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Datos opcionales</Text>
-
         <LineTextField
+          error={showError('ubicacion')}
           label="Ubicación"
+          onBlur={() => handleBlur('ubicacion')}
           onChangeText={(v) => handleChange('ubicacion', v)}
           placeholder="Ej: La Rural, Palermo, CABA"
           value={form.ubicacion}
         />
+
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Datos adicionales</Text>
+
+        <AuctionCoverPicker cover={coverImage} onChange={setCoverImage} />
 
         <LineTextField
           keyboardType="numeric"
@@ -533,17 +816,120 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
       <View style={styles.submit}>
         <PrimaryButton
           disabled={loading}
-          onPress={handleSubmit}
+          onPress={handleCreateAuction}
           style={styles.submitButton}
         >
-          {loading ? 'Creando...' : 'Crear subasta'}
+          {loading ? 'Creando...' : 'Continuar'}
         </PrimaryButton>
       </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.catalogHeader}>
+            <Text style={styles.catalogTitle}>Catalogo de productos</Text>
+            <Text style={styles.catalogSubtitle}>
+              Selecciona los productos asignados que queres sumar a esta subasta.
+            </Text>
+          </View>
+
+          {catalogLoading ? (
+            <ActivityIndicator color={colors.burgundy} style={styles.catalogSpinner} />
+          ) : catalogError ? (
+            <Text style={styles.apiError}>{catalogError}</Text>
+          ) : catalogProducts.length === 0 ? (
+            <Text style={styles.emptyCatalogText}>
+              No tenes productos asignados disponibles para catalogar.
+            </Text>
+          ) : (
+            <View style={styles.productsList}>
+              {catalogProducts.map((product) => (
+                <AuctionProductOption
+                  commission={commissions[product.id] ?? ''}
+                  isSelected={selectedProductIds.includes(product.id)}
+                  key={product.id}
+                  onCommissionChange={(value) => handleCommissionChange(product.id, value)}
+                  onPress={() => toggleProduct(product)}
+                  product={product}
+                />
+              ))}
+            </View>
+          )}
+
+          <View style={styles.stepActions}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={loading}
+              onPress={() => setStep(1)}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>Volver</Text>
+            </Pressable>
+            <PrimaryButton
+              disabled={loading || selectedProductIds.length === 0}
+              onPress={handleFinishCatalog}
+              style={styles.finishButton}
+            >
+              {loading ? 'Guardando...' : 'Finalizar'}
+            </PrimaryButton>
+          </View>
+        </>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  progressContainer: {
+    marginBottom: 24,
+    position: 'relative',
+    width: '100%',
+  },
+  progressTrack: {
+    backgroundColor: 'rgba(117, 7, 25, 0.35)',
+    height: 4,
+    left: '25%',
+    position: 'absolute',
+    right: '25%',
+    top: 17,
+  },
+  progressFill: {
+    backgroundColor: colors.burgundy,
+    height: '100%',
+  },
+  progressSteps: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    position: 'relative',
+  },
+  progressStep: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  progressCircle: {
+    alignItems: 'center',
+    backgroundColor: '#70362E',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  progressCircleActive: {
+    backgroundColor: colors.burgundy,
+    borderColor: colors.blush,
+    borderWidth: 2,
+  },
+  progressNumber: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+  },
+  progressLabel: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'center',
+  },
   screen: {
     paddingHorizontal: 32,
     paddingTop: 31,
@@ -575,6 +961,161 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 12,
     textAlign: 'center',
+  },
+  catalogHeader: {
+    borderBottomColor: 'rgba(138, 74, 58, 0.55)',
+    borderBottomWidth: 1,
+    marginBottom: 14,
+    paddingBottom: 8,
+  },
+  catalogTitle: {
+    color: colors.cocoa,
+    fontFamily: fonts.bold,
+    fontSize: 24,
+    lineHeight: 31,
+  },
+  catalogSubtitle: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  catalogSpinner: {
+    marginVertical: 28,
+  },
+  emptyCatalogText: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    marginVertical: 24,
+    textAlign: 'center',
+  },
+  productsList: {
+    rowGap: 18,
+  },
+  productOption: {
+    backgroundColor: 'rgba(242, 211, 200, 0.52)',
+    borderColor: 'rgba(159, 2, 29, 0.14)',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
+  },
+  productOptionSelected: {
+    borderColor: colors.burgundy,
+    borderWidth: 2,
+  },
+  productOptionBody: {
+    columnGap: 12,
+    flexDirection: 'row',
+  },
+  productImageFrame: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(252, 235, 219, 0.78)',
+    borderRadius: 4,
+    height: 178,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 134,
+  },
+  productImage: {
+    height: '100%',
+    width: '100%',
+  },
+  productImageFallback: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  productCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  productTitle: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    lineHeight: 19,
+  },
+  productOwner: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 1,
+  },
+  productDescription: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 10,
+  },
+  productPrice: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 6,
+  },
+  productActions: {
+    alignItems: 'flex-end',
+    columnGap: 12,
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  commissionField: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  selectProductButton: {
+    alignItems: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    marginBottom: 2,
+    paddingHorizontal: 10,
+  },
+  selectProductButtonActive: {
+    backgroundColor: colors.burgundy,
+  },
+  selectProductButtonText: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 17,
+  },
+  selectProductButtonTextActive: {
+    color: colors.white,
+  },
+  stepActions: {
+    alignItems: 'center',
+    columnGap: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 32,
+    marginTop: 24,
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 25,
+    borderWidth: 1,
+    height: 50,
+    justifyContent: 'center',
+    width: 120,
+  },
+  secondaryButtonText: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.regular,
+    fontSize: 16,
+  },
+  finishButton: {
+    width: 138,
   },
   coverContainer: {
     marginBottom: 22,
