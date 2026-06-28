@@ -9,3 +9,8 @@ export function getAuctionCatalog(auctionId, page = 1, amount = 6) {
     `/v1/subastas/${encodeURIComponent(auctionId)}/catalogo?pagina=${page}&cantidad=${amount}`
   );
 }
+
+export function getActiveItem(auctionId) {
+  return apiFetch(`/v1/subastas/${encodeURIComponent(auctionId)}/item-actual`);
+}
+

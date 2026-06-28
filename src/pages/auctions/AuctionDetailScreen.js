@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -13,10 +13,12 @@ import Svg, { Path } from 'react-native-svg';
 import {
   getAuctionCatalog,
   getAuctionDetails,
+  getActiveItem,
 } from '../../services/auctionsApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
-import { resolveApiAssetUrl } from '../../utils/config';
+import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
+import { getAccessToken } from '../../utils/session';
 
 const referenceColors = {
   card: '#F6E3D1',
@@ -157,68 +159,123 @@ function hasMoreCatalogPages(catalog) {
   );
 }
 
-function ProductLotCard({ currency, imageSize, lot, onPress }) {
+function formatActiveTimeCard(totalSecs) {
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${pad(mins)}:${pad(secs)}`;
+}
+
+function ProductLotCard({
+  currency,
+  imageSize,
+  lot,
+  onPress,
+  isActive,
+  isFinished,
+  activeItemData,
+  now,
+}) {
   const identifier = lot.identificador ?? lot.idProducto;
   const imageSource = getFirstPhotoSource(lot);
+  const productName = lot.nombre || lot.titulo || 'Producto sin nombre';
   const status = lot.estado || 'Sin estado';
   const title = lot.descripcionCatalogo
-    ? `${lot.titulo || 'Producto sin titulo'} - ${lot.descripcionCatalogo}`
-    : lot.titulo || 'Producto sin titulo';
+    ? `${productName} - ${lot.descripcionCatalogo}`
+    : productName;
+
+  let activeItemRemainingSecs = 0;
+  const activeEndTime = activeItemData?.finalizaEn ?? activeItemData?.finaliza_en;
+  if (isActive && activeEndTime) {
+    const endTime = new Date(activeEndTime).getTime();
+    activeItemRemainingSecs = Math.max(0, Math.floor((endTime - now) / 1000));
+  }
 
   return (
     <Pressable
       accessibilityLabel={`Ver producto ${title}`}
       accessibilityRole="button"
+      disabled={isFinished}
       onPress={onPress}
       style={({ pressed }) => [
         styles.productCard,
-        pressed ? styles.productCardPressed : null,
+        isActive ? styles.productCardActive : null,
+        isFinished ? styles.productCardFinished : null,
+        pressed && !isFinished ? styles.productCardPressed : null,
       ]}
     >
-      {imageSource ? (
-        <Image
-          accessibilityLabel={`Foto de ${lot.titulo || 'producto'}`}
-          resizeMode="cover"
-          source={imageSource}
-          style={[styles.productImage, { height: imageSize, width: imageSize }]}
-        />
-      ) : (
-        <View
-          style={[
-            styles.productImage,
-            styles.productImageFallback,
-            { height: imageSize, width: imageSize },
-          ]}
-        >
-          <Text style={styles.productImageFallbackText}>Sin foto</Text>
-        </View>
-      )}
+      <View style={{ height: imageSize, width: imageSize, position: 'relative', borderTopLeftRadius: 5, borderBottomLeftRadius: 5, overflow: 'hidden' }}>
+        {imageSource ? (
+          <Image
+            accessibilityLabel={`Foto de ${productName}`}
+            resizeMode="cover"
+            source={imageSource}
+            style={[styles.productImage, { height: imageSize, width: imageSize }]}
+          />
+        ) : (
+          <View
+            style={[
+              styles.productImage,
+              styles.productImageFallback,
+              { height: imageSize, width: imageSize },
+            ]}
+          >
+            <Text style={styles.productImageFallbackText}>Sin foto</Text>
+          </View>
+        )}
+      </View>
 
       <View style={styles.productBody}>
         <View>
           <Text numberOfLines={1} style={styles.productCode}>
             ID #{identifier ?? '-'}
           </Text>
-          <Text numberOfLines={4} style={styles.productTitle}>
+          <Text numberOfLines={isActive ? 2 : 4} style={styles.productTitle}>
             {title}
           </Text>
+          {isActive ? (
+            <Text style={styles.activePriceLabel}>
+              Precio inicial: {formatPrice(lot.precioBase, currency)}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.productFooter}>
-          <View style={styles.priceBlock}>
-            <Text style={styles.priceLabel}>Precio base</Text>
-            <Text numberOfLines={1} style={styles.priceValue}>
-              {formatPrice(lot.precioBase, currency)}
-            </Text>
-          </View>
+          {isActive ? (
+            <View style={{ flex: 1, marginTop: 4 }}>
+              <Text numberOfLines={1} style={styles.activePriceValue}>
+                {formatPrice(activeItemData?.mejorOferta ?? activeItemData?.mejor_oferta ?? lot.precioBase, currency)}
+              </Text>
+              <Text style={styles.activeTimeLabel}>
+                Tiempo restante:{' '}
+                <Text style={styles.activeTimeValue}>
+                  {formatActiveTimeCard(activeItemRemainingSecs)}
+                </Text>
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.priceBlock}>
+                <Text style={styles.priceLabel}>Precio base</Text>
+                <Text numberOfLines={1} style={styles.priceValue}>
+                  {formatPrice(lot.precioBase, currency)}
+                </Text>
+              </View>
 
-          <View style={styles.statusBadge}>
-            <Text numberOfLines={1} style={styles.statusBadgeText}>
-              {status.toUpperCase()}
-            </Text>
-          </View>
+              <View style={styles.statusBadge}>
+                <Text numberOfLines={1} style={styles.statusBadgeText}>
+                  {status.toUpperCase()}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
       </View>
+      {isActive ? (
+        <View style={styles.activeBadge}>
+          <Text style={styles.activeBadgeText}>SUBASTANDO AHORA</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -238,20 +295,60 @@ export default function AuctionDetailScreen({
   const [loadMoreError, setLoadMoreError] = useState('');
   const [lots, setLots] = useState([]);
   const [now, setNow] = useState(() => Date.now());
+  const [activeItem, setActiveItem] = useState(null);
+  const wsRef = useRef(null);
+  const hasRefreshedForStartRef = useRef(false);
+  const [wsStatus, setWsStatus] = useState('disconnected');
+  const serverTimeOffsetRef = useRef(0);
+
   const horizontalPadding = width < 360 ? 18 : 30;
   const contentWidth = Math.min(width - horizontalPadding * 2, 347);
   const imageSize = Math.max(116, Math.min(145, contentWidth * (145 / 347)));
   const compact = contentWidth < 325;
   const resolvedAuctionId =
     auctionId ?? auction?.identificador ?? auction?.id;
+
+  useEffect(() => {
+    if (!resolvedAuctionId) return;
+    const startTime = Date.now();
+    fetch(`${API_BASE_URL}/health`)
+      .then((res) => {
+        const dateHeader = res.headers.get('date');
+        if (dateHeader) {
+          const serverTime = new Date(dateHeader).getTime();
+          const latency = (Date.now() - startTime) / 2;
+          serverTimeOffsetRef.current = (serverTime + latency) - Date.now();
+          console.log('Synchronized time offset with server:', serverTimeOffsetRef.current, 'ms');
+        }
+      })
+      .catch((err) => console.log('Error syncing time with server:', err));
+  }, [resolvedAuctionId]);
+
   const countdown = formatTimeRemaining(
     auctionDetails?.fecha,
     auctionDetails?.hora,
-    now
+    now + serverTimeOffsetRef.current
   );
 
+  const formatActiveTimeHeader = (totalSecs) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    if (mins > 0) {
+      return `${mins} m y ${secs} s`;
+    }
+    return `${secs} s`;
+  };
+
+  let activeItemRemainingSecs = 0;
+  const activeEndTime = activeItem?.finalizaEn ?? activeItem?.finaliza_en;
+  if (activeEndTime) {
+    const endTime = new Date(activeEndTime).getTime();
+    const syncNow = now + serverTimeOffsetRef.current;
+    activeItemRemainingSecs = Math.max(0, Math.floor((endTime - syncNow) / 1000));
+  }
+
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 30000);
+    const interval = setInterval(() => setNow(Date.now()), 1000);
 
     return () => clearInterval(interval);
   }, []);
@@ -319,6 +416,171 @@ export default function AuctionDetailScreen({
     };
   }, [resolvedAuctionId]);
 
+  useEffect(() => {
+    if (!resolvedAuctionId || auctionDetails?.estado !== 'programada') {
+      return;
+    }
+
+    let active = true;
+
+    const checkStatus = () => {
+      getAuctionDetails(resolvedAuctionId)
+        .then((details) => {
+          if (active && details && details.estado !== 'programada') {
+            setAuctionDetails(details);
+            getAuctionCatalog(resolvedAuctionId, 1, CATALOG_PAGE_SIZE)
+              .then((catalog) => {
+                if (active) {
+                  setLots(Array.isArray(catalog?.items) ? catalog.items : []);
+                  setHasMoreLots(hasMoreCatalogPages(catalog));
+                }
+              })
+              .catch((err) => console.log('Error refreshing catalog:', err));
+          }
+        })
+        .catch((err) => console.log('Error polling status:', err));
+    };
+
+    const interval = setInterval(checkStatus, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [resolvedAuctionId, auctionDetails?.estado]);
+
+  useEffect(() => {
+    if (auctionDetails?.estado !== 'programada') {
+      return;
+    }
+
+    const startDate = getAuctionStartDate(auctionDetails.fecha, auctionDetails.hora);
+    const syncNow = now + serverTimeOffsetRef.current;
+    if (startDate && startDate.getTime() <= syncNow && !hasRefreshedForStartRef.current) {
+      hasRefreshedForStartRef.current = true;
+      
+      getAuctionDetails(resolvedAuctionId)
+        .then((details) => {
+          if (details && details.estado !== 'programada') {
+            setAuctionDetails(details);
+            getAuctionCatalog(resolvedAuctionId, 1, CATALOG_PAGE_SIZE)
+              .then((catalog) => {
+                setLots(Array.isArray(catalog?.items) ? catalog.items : []);
+                setHasMoreLots(hasMoreCatalogPages(catalog));
+              })
+              .catch((err) => console.log('Error refreshing catalog:', err));
+          }
+        })
+        .catch((err) => console.log('Error refreshing start:', err));
+    }
+  }, [now, resolvedAuctionId, auctionDetails]);
+
+  useEffect(() => {
+    if (!resolvedAuctionId || auctionDetails?.estado !== 'abierta') {
+      setActiveItem(null);
+      return;
+    }
+
+    let active = true;
+
+    getActiveItem(resolvedAuctionId)
+      .then((data) => {
+        if (active) {
+          setActiveItem(data);
+        }
+      })
+      .catch((err) => {
+        console.log('Error fetching active item:', err);
+      });
+
+    const wsBase = API_BASE_URL.replace(/^http/, 'ws');
+    const token = getAccessToken();
+    const wsUrl = `${wsBase}/v1/ws/subastas/${resolvedAuctionId}${token ? `?token=${token}` : ''}`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log('WebSocket event:', message);
+        if (message.evento === 'nuevaPuja') {
+          const datos = message.datos;
+          const datosIdItem = datos?.idItem ?? datos?.id_item;
+          if (active) {
+            setActiveItem((current) => {
+              const currentIdItem = current?.idItem ?? current?.id_item;
+              if (current && Number(currentIdItem) === Number(datosIdItem)) {
+                return {
+                  ...current,
+                  mejorOferta: datos.importe,
+                  mejor_oferta: datos.importe,
+                  pujaMinima: datos.pujaMinima ?? datos.puja_minima,
+                  puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                  pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
+                  puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
+                };
+              }
+              return current;
+            });
+          }
+        } else if (message.evento === 'cambioItem') {
+          const datos = message.datos;
+          if (active) {
+            setActiveItem(datos.itemActual);
+            if (datos.itemAnterior) {
+              const prevIdItem = datos.itemAnterior.idItem ?? datos.itemAnterior.id_item;
+              setLots((currentLots) =>
+                currentLots.map((lot) => {
+                  if (Number(lot.identificador) === Number(prevIdItem)) {
+                    return { ...lot, subastado: 'si' };
+                  }
+                  return lot;
+                })
+              );
+            }
+          }
+        } else if (message.evento === 'subastaFinalizada') {
+          if (active) {
+            setActiveItem(null);
+            getAuctionDetails(resolvedAuctionId)
+              .then((details) => {
+                if (active) {
+                  setAuctionDetails(details);
+                }
+              })
+              .catch((err) => console.log('Error refreshing auction details on finish:', err));
+          }
+        }
+      } catch (err) {
+        console.log('Error parsing WebSocket message:', err);
+      }
+    };
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      if (active) setWsStatus('connected');
+    };
+
+    ws.onerror = (err) => {
+      console.log('WebSocket error:', err);
+      if (active) setWsStatus('error');
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket closed');
+      if (active) setWsStatus('disconnected');
+    };
+
+    return () => {
+      active = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [resolvedAuctionId, auctionDetails?.estado]);
+
   async function handleLoadMore() {
     if (!hasMoreLots || isLoadingMore) {
       return;
@@ -366,14 +628,28 @@ export default function AuctionDetailScreen({
           </View>
 
           <View style={styles.summaryCard}>
-            <View style={styles.countdownBlock}>
-              <Text style={styles.countdownLabel}>La subasta inicia en</Text>
-              <Text style={styles.countdownValue}>
-                {countdown
-                  ? `${countdown.days} dias, ${countdown.hours}h y ${countdown.minutes}m`
-                  : 'Fecha a confirmar'}
-              </Text>
-            </View>
+            {auctionDetails?.estado === 'abierta' ? (
+              <View style={styles.countdownBlock}>
+                <Text style={styles.countdownLabel}>Proximo item en</Text>
+                <Text style={styles.countdownValue}>
+                  {activeItem ? formatActiveTimeHeader(activeItemRemainingSecs) : 'Cargando...'}
+                </Text>
+              </View>
+            ) : auctionDetails?.estado === 'cerrada' ? (
+              <View style={styles.countdownBlock}>
+                <Text style={styles.countdownLabel}>Estado</Text>
+                <Text style={styles.countdownValue}>Subasta finalizada</Text>
+              </View>
+            ) : (
+              <View style={styles.countdownBlock}>
+                <Text style={styles.countdownLabel}>La subasta inicia en</Text>
+                <Text style={styles.countdownValue}>
+                  {countdown
+                    ? `${countdown.days} dias, ${countdown.hours}h y ${countdown.minutes}m`
+                    : 'Fecha a confirmar'}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.auctionMeta}>
               <View style={styles.categoryBadge}>
@@ -410,15 +686,24 @@ export default function AuctionDetailScreen({
         ) : (
           <>
             <View style={styles.lotList}>
-              {lots.map((lot, index) => (
-                <ProductLotCard
-                  currency={auctionDetails?.moneda}
-                  imageSize={imageSize}
-                  key={String(lot.identificador ?? lot.idProducto ?? index)}
-                  lot={lot}
-                  onPress={() => onProductPress?.(lot)}
-                />
-              ))}
+              {lots.map((lot, index) => {
+                const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
+                const isActive = activeItem && activeItemId && Number(lot.identificador) === Number(activeItemId);
+                const isFinished = lot.subastado === 'si';
+                return (
+                  <ProductLotCard
+                    currency={auctionDetails?.moneda}
+                    imageSize={imageSize}
+                    key={String(lot.identificador ?? lot.idProducto ?? index)}
+                    lot={lot}
+                    onPress={() => onProductPress?.(lot)}
+                    isActive={isActive}
+                    isFinished={isFinished}
+                    activeItemData={activeItem}
+                    now={now + serverTimeOffsetRef.current}
+                  />
+                );
+              })}
             </View>
 
             {loadMoreError ? (
@@ -696,5 +981,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  productCardActive: {
+    borderWidth: 3,
+    borderColor: colors.burgundy,
+    borderRadius: 5,
+    overflow: 'visible',
+    shadowColor: colors.burgundy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  productCardFinished: {
+    backgroundColor: '#E6DED8',
+    opacity: 0.6,
+  },
+  activeBadge: {
+    position: 'absolute',
+    bottom: -10,
+    left: -6,
+    backgroundColor: colors.burgundy,
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    zIndex: 10,
+  },
+  activeBadgeText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  activePriceLabel: {
+    color: referenceColors.text,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 14,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  activePriceValue: {
+    color: colors.statusGreenBorder,
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    lineHeight: 22,
+    marginBottom: 4,
+  },
+  activeTimeLabel: {
+    color: referenceColors.text,
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    lineHeight: 13,
+  },
+  activeTimeValue: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
   },
 });
