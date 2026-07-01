@@ -33,7 +33,12 @@ const TYPE_TITLES = {
   producto_no_vendido: 'Producto no vendido',
   devolucion_producto: 'Producto devuelto',
   cuenta_bloqueada: 'Cuenta bloqueada',
+  cuenta_verificada: 'Cuenta verificada',
   medio_verificado: 'Medio de pago verificado',
+  medio_no_verificado: 'Medio de pago no verificado',
+  admin_cliente_pendiente: 'Nueva cuenta para verificar',
+  admin_medio_pago_pendiente: 'Nuevo medio de pago para verificar',
+  admin_producto_pendiente: 'Nuevo producto para verificar',
 };
 
 const TYPE_TEXTS = {
@@ -55,8 +60,18 @@ const TYPE_TEXTS = {
   devolucion_producto: () => 'Tu producto fue retirado del catálogo y está disponible nuevamente.',
   cuenta_bloqueada: () =>
     'Tu cuenta fue bloqueada por una multa impaga vencida. Abonala para continuar.',
+  cuenta_verificada: (d) =>
+    `Tu cuenta fue verificada.${d?.categoria ? ` Categoria asignada: ${d.categoria}.` : ''}`,
   medio_verificado: (d) =>
     `Tu medio de pago${d?.tipo ? ` (${d.tipo})` : ''} fue verificado y ya puede usarse para pujar.`,
+  medio_no_verificado: (d) =>
+    `Tu medio de pago${d?.tipo ? ` (${d.tipo})` : ''} no fue verificado. Revisalo o carga otro medio para poder pujar.`,
+  admin_cliente_pendiente: (d) =>
+    `Nueva cuenta pendiente${d?.email ? `: ${d.email}` : ''}.`,
+  admin_medio_pago_pendiente: (d) =>
+    `Nuevo medio de pago pendiente${d?.tipo ? ` (${d.tipo})` : ''}.`,
+  admin_producto_pendiente: (d) =>
+    `Nuevo producto para verificar${d?.nombre ? `: ${d.nombre}` : ''}.`,
 };
 
 function formatTime(isoStr) {
@@ -119,9 +134,7 @@ export default function TopBar({
   const logoHeight = logoWidth / LOGO_RATIO;
 
   const ctx = useNotifications();
-  const notifications = (ctx?.notifications ?? []).filter(
-    (notification) => notification.tipo !== 'medio_verificado'
-  );
+  const notifications = ctx?.notifications ?? [];
   const unreadCount = notifications.filter(
     (notification) => notification.leida === 'no'
   ).length;

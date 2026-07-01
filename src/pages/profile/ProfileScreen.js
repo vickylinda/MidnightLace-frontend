@@ -24,6 +24,7 @@ import PasswordChecklist, {
 } from '../../components/forms/auth/PasswordChecklist';
 import PrimaryButton from '../../components/forms/controls/PrimaryButton';
 import PaymentMethodsScreen from '../signup/PaymentMethodsScreen';
+import { useNotifications } from '../../context/NotificationsContext';
 import {
   deletePaymentMethod,
   listCountries,
@@ -189,6 +190,29 @@ function paymentPresentation(payment) {
       `Vencimiento: ${formatPaymentExpiration(detail.fechaVencimiento)}`,
     ],
     title: 'Tarjeta de crédito',
+  };
+}
+
+function paymentVerificationPresentation(payment) {
+  const status = String(payment?.verificado || '').toLowerCase();
+
+  if (status === 'si' || status === 'verificado') {
+    return {
+      label: 'Estado: verificado',
+      style: styles.paymentStatusVerified,
+    };
+  }
+
+  if (status === 'no' || status === 'no verificado') {
+    return {
+      label: 'Estado: no verificado',
+      style: styles.paymentStatusRejected,
+    };
+  }
+
+  return {
+    label: 'Estado: no verificado',
+    style: styles.paymentStatusRejected,
   };
 }
 
@@ -840,6 +864,7 @@ function LogoutModal({ onClose, onConfirm, visible }) {
 
 export default function ProfileScreen({ onLogout }) {
   const { showToast } = useToast();
+  const { lastEvent } = useNotifications() ?? {};
   const [address, setAddress] = useState(INITIAL_ADDRESS);
   const [countries, setCountries] = useState([]);
   const [dniFiles, setDniFiles] = useState([]);
@@ -964,6 +989,17 @@ export default function ProfileScreen({ onLogout }) {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (
+      lastEvent?.evento !== 'medio_verificado' &&
+      lastEvent?.evento !== 'cuenta_verificada'
+    ) {
+      return;
+    }
+
+    loadData({ showLoader: false });
+  }, [lastEvent?.receivedAt]);
 
   async function applyProfileImage(asset) {
     if (!asset?.uri) {
@@ -1337,6 +1373,7 @@ export default function ProfileScreen({ onLogout }) {
             {payments.length ? (
               payments.map((payment) => {
                 const presentation = paymentPresentation(payment);
+                const verification = paymentVerificationPresentation(payment);
                 return (
                   <View key={payment.identificador} style={styles.paymentRow}>
                     <PaymentTypeIcon type={presentation.icon} />
@@ -1353,6 +1390,14 @@ export default function ProfileScreen({ onLogout }) {
                           {line}
                         </Text>
                       ))}
+                      <Text
+                        style={[
+                          styles.paymentStatus,
+                          verification.style,
+                        ]}
+                      >
+                        {verification.label}
+                      </Text>
                     </View>
                     <View style={styles.paymentActions}>
                       <IconButton
@@ -1701,6 +1746,28 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     lineHeight: 18,
+  },
+  paymentStatus: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    fontFamily: fonts.semiBold,
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  paymentStatusVerified: {
+    backgroundColor: 'rgba(77, 156, 69, 0.16)',
+    color: '#397F31',
+  },
+  paymentStatusPending: {
+    backgroundColor: 'rgba(232, 177, 50, 0.18)',
+    color: '#8A620D',
+  },
+  paymentStatusRejected: {
+    backgroundColor: 'rgba(95, 95, 95, 0.14)',
+    color: '#5F5F5F',
   },
   paymentActions: {
     alignItems: 'center',

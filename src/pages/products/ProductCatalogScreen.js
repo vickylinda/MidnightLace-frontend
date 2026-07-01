@@ -329,6 +329,10 @@ function mapProduct(producto, isSubastador = false) {
     owner: ownerDisplay,
     ownerLabel: 'Publicado por',
     priceLabel: formatPrice(producto.precioBase, producto.moneda),
+    rejectionReason:
+      cleanProductText(producto.motivoRechazo ?? producto.motivo_rechazo) || null,
+    insurance: producto.seguro || null,
+    deposit: producto.deposito || null,
     shortDescription,
     status: mapped.status,
     statusLabel: mapped.statusLabel,
@@ -344,7 +348,11 @@ function ProductDetailsModal({ product, onClose, onReviewConditions, isSubastado
   }
 
   const detailMap = isSubastador ? AUCTIONEER_STATUS_DETAILS : OWNER_STATUS_DETAILS;
-  const detail = detailMap[product.status] ?? STATUS_DETAILS[product.status] ?? 'Estado registrado por el sistema.';
+  const defaultDetail = detailMap[product.status] ?? STATUS_DETAILS[product.status] ?? 'Estado registrado por el sistema.';
+  const detail =
+    product.status === 'rejected' && product.rejectionReason
+      ? `Motivo: ${product.rejectionReason}`
+      : defaultDetail;
   const statusTitle = product.statusLabel
     ? product.statusLabel.charAt(0).toUpperCase() + product.statusLabel.slice(1)
     : 'Estado';
@@ -426,6 +434,24 @@ function ProductDetailsModal({ product, onClose, onReviewConditions, isSubastado
               <View style={styles.modalPriceRow}>
                 <Text style={styles.modalPriceLabel}>Precio base:</Text>
                 <Text style={styles.modalPriceValue}>{product.priceLabel}</Text>
+              </View>
+            ) : null}
+
+            {product.insurance ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Seguro</Text>
+                <Text style={styles.modalDescription}>
+                  {product.insurance.compania || '-'} - Poliza {product.insurance.nroPoliza || '-'} - {product.insurance.importe || '-'}
+                </Text>
+              </View>
+            ) : null}
+
+            {product.deposit ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Deposito asignado</Text>
+                <Text style={styles.modalDescription}>
+                  {product.deposit.nombre || '-'} - {product.deposit.direccion || '-'}
+                </Text>
               </View>
             ) : null}
 

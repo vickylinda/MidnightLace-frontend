@@ -1,4 +1,5 @@
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -6,10 +7,13 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useEffect, useState } from 'react';
 import Svg, { Path } from 'react-native-svg';
 
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
+import { resolveApiAssetUrl } from '../../utils/config';
+import { apiFetch, getApiErrorMessage } from '../../utils/http';
 
 const referenceLots = [
   {
@@ -69,6 +73,22 @@ function LocationPinIcon({ size = 31 }) {
   );
 }
 
+function normalizePhotoSource(photo) {
+  const path = typeof photo === 'string' ? photo : photo?.foto || photo?.url || photo?.uri;
+  return path ? { uri: resolveApiAssetUrl(path) } : null;
+}
+
+function mapCatalogItem(item) {
+  const photos = item.fotos || item.producto?.fotos || [];
+  return {
+    code: `ITEM-${item.identificador}`,
+    imageSource: normalizePhotoSource(photos[0]),
+    openingBid: `${item.precioBase || '-'} ${item.moneda || ''}`.trim(),
+    rawData: item,
+    title: item.descripcionProducto || item.producto?.nombre || `Producto #${item.idProducto}`,
+  };
+}
+
 function ProductLotCard({ imageSize, lot, onPress }) {
   return (
     <Pressable
@@ -81,17 +101,23 @@ function ProductLotCard({ imageSize, lot, onPress }) {
         pressed ? styles.productCardPressed : null,
       ]}
     >
-      <Image
-        resizeMode="cover"
-        source={lot.imageSource}
-        style={[
-          styles.productImage,
-          {
-            height: imageSize,
-            width: imageSize,
-          },
-        ]}
-      />
+      {lot.imageSource ? (
+        <Image
+          resizeMode="cover"
+          source={lot.imageSource}
+          style={[
+            styles.productImage,
+            {
+              height: imageSize,
+              width: imageSize,
+            },
+          ]}
+        />
+      ) : (
+        <View style={[styles.productImage, styles.productImageFallback, { height: imageSize, width: imageSize }]}>
+          <Text style={styles.productImageFallbackText}>Sin foto</Text>
+        </View>
+      )}
 
       <View style={styles.productBody}>
         <View>
@@ -118,12 +144,68 @@ function ProductLotCard({ imageSize, lot, onPress }) {
   );
 }
 
-export default function AuctionDetailScreen({ onProductPress }) {
+export default function AuctionDetailScreen({ auction, isSubastador = false, onProductPress }) {
   const { width } = useWindowDimensions();
+  const [currentAuction, setCurrentAuction] = useState(auction);
+  const [lots, setLots] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [message, setMessage] = useState('');
   const horizontalPadding = width < 360 ? 18 : 30;
   const contentWidth = Math.min(width - horizontalPadding * 2, 347);
   const imageSize = Math.max(116, Math.min(145, contentWidth * (145 / 347)));
   const compact = contentWidth < 325;
+  const canStartNow = isSubastador && currentAuction?.estado === 'programada';
+
+  useEffect(() => {
+    setCurrentAuction(auction);
+  }, [auction]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchCatalog() {
+      if (!currentAuction?.identificador) return;
+      setLoadingCatalog(true);
+      try {
+        const data = await apiFetch(`/v1/subastas/${currentAuction.identificador}/catalogo?pagina=1&cantidad=100`);
+        if (!cancelled) {
+          setLots((data.items || []).map(mapCatalogItem));
+        }
+      } catch {
+        if (!cancelled) {
+          setLots(referenceLots);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingCatalog(false);
+        }
+      }
+    }
+
+    fetchCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAuction?.identificador]);
+
+  async function handleStartNow() {
+    if (!currentAuction?.identificador || starting) return;
+    setStarting(true);
+    setMessage('');
+    try {
+      const updated = await apiFetch(`/v1/subastador/subastas/${currentAuction.identificador}/estado`, {
+        method: 'PATCH',
+        body: { estado: 'abierta' },
+      });
+      setCurrentAuction(updated);
+      setMessage('Subasta iniciada.');
+    } catch (err) {
+      setMessage(getApiErrorMessage(err, 'No pudimos iniciar la subasta.'));
+    } finally {
+      setStarting(false);
+    }
+  }
 
   return (
     <View style={[styles.screen, { paddingHorizontal: horizontalPadding }]}>
@@ -131,43 +213,65 @@ export default function AuctionDetailScreen({ onProductPress }) {
         <View style={styles.summaryShell}>
           <View style={styles.auctionPill}>
             <Text numberOfLines={1} style={styles.auctionPillText}>
-              Gyaru Deluxe
+              {currentAuction?.nombre || 'Subasta'}
             </Text>
           </View>
 
           <View style={styles.summaryCard}>
             <View style={styles.countdownBlock}>
-              <Text style={styles.countdownLabel}>La subasta inicia en</Text>
+              <Text style={styles.countdownLabel}>
+                {currentAuction?.estado === 'abierta' ? 'La subasta esta' : 'La subasta inicia'}
+              </Text>
               <Text style={styles.countdownValue}>
-                <Text style={styles.countdownDays}>3 dias </Text>
-                14h 37m
+                {currentAuction?.estado === 'abierta'
+                  ? 'En curso'
+                  : currentAuction?.fecha
+                  ? `${String(currentAuction.fecha).split('-').reverse().join('/')} ${String(currentAuction.hora || '').slice(0, 5)}`
+                  : 'Programada'}
               </Text>
             </View>
 
             <View style={styles.auctionMeta}>
               <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText}>ESPECIAL</Text>
+                <Text style={styles.categoryBadgeText}>
+                  {String(currentAuction?.categoria || 'especial').toUpperCase()}
+                </Text>
               </View>
 
               <View style={styles.locationRow}>
                 <LocationPinIcon size={compact ? 25 : 31} />
                 <Text style={styles.locationText}>
-                  La Rural,{'\n'}Palermo, CABA
+                  {currentAuction?.ubicacion || 'Ubicacion a confirmar'}
                 </Text>
               </View>
             </View>
           </View>
         </View>
 
+        {canStartNow ? (
+          <Pressable
+            disabled={starting}
+            onPress={handleStartNow}
+            style={[styles.startNowButton, starting ? styles.startNowButtonDisabled : null]}
+          >
+            <Text style={styles.startNowText}>{starting ? 'INICIANDO...' : 'INICIAR AHORA'}</Text>
+          </Pressable>
+        ) : null}
+        {message ? <Text style={styles.message}>{message}</Text> : null}
+
         <View style={styles.lotList}>
-          {referenceLots.map((lot) => (
-            <ProductLotCard
-              imageSize={imageSize}
-              key={lot.code}
-              lot={lot}
-              onPress={() => onProductPress?.(lot)}
-            />
-          ))}
+          {loadingCatalog ? (
+            <ActivityIndicator color={colors.burgundy} style={styles.loader} />
+          ) : (
+            (lots.length ? lots : referenceLots).map((lot) => (
+              <ProductLotCard
+                imageSize={imageSize}
+                key={lot.code}
+                lot={lot}
+                onPress={() => onProductPress?.(lot.rawData || lot)}
+              />
+            ))
+          )}
         </View>
 
         <View style={styles.loadMoreButton}>
@@ -302,6 +406,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBlush,
     flexShrink: 0,
   },
+  productImageFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productImageFallbackText: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+  },
   productBody: {
     flex: 1,
     justifyContent: 'space-between',
@@ -382,5 +495,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 0,
     lineHeight: 19,
+  },
+  startNowButton: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: colors.burgundy,
+    borderRadius: 999,
+    justifyContent: 'center',
+    marginBottom: 16,
+    minHeight: 42,
+    paddingHorizontal: 22,
+  },
+  startNowButtonDisabled: {
+    opacity: 0.62,
+  },
+  startNowText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    letterSpacing: 0,
+  },
+  message: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  loader: {
+    marginVertical: 24,
   },
 });

@@ -95,6 +95,11 @@ function mapPuja(p) {
 }
 
 function mapCompra(r) {
+  const importe = Number(r.importe || 0);
+  const comision = Number(r.comision || 0);
+  const costoEnvio = Number(r.costoEnvio || 0);
+  const retiraPersonalmente = Boolean(r.retiraPersonalmente);
+  const total = importe + comision + (retiraPersonalmente ? 0 : costoEnvio);
   return {
     id: String(r.identificador),
     identificador: r.identificador,
@@ -102,9 +107,12 @@ function mapCompra(r) {
     image: r.fotoProducto ? { uri: resolveApiAssetUrl(r.fotoProducto) } : null,
     auction: r.nombreSubasta || `Subasta #${r.idSubasta}`,
     date: r.fechaRegistro ? formatDateOnly(r.fechaRegistro) : '-',
-    amount: formatAmount(r.importe, r.moneda),
-    status: r.retiraPersonalmente ? 'retira personalmente' : r.pagado ? 'pagado' : 'pendiente de pago',
-    retiraPersonalmente: Boolean(r.retiraPersonalmente),
+    amount: formatAmount(total, r.moneda),
+    baseAmount: formatAmount(importe, r.moneda),
+    commission: formatAmount(comision, r.moneda),
+    shippingCost: formatAmount(costoEnvio, r.moneda),
+    status: retiraPersonalmente ? 'retira personalmente' : r.pagado ? 'pagado' : 'pendiente de pago',
+    retiraPersonalmente,
     pickup: r.direccionRetiro || null,
     pickupAddress: r.direccionRetiroTexto || null,
     pickupWindow: r.ventanaRetiro || null,
@@ -676,7 +684,15 @@ function PurchaseDetailModal({ item, onClose }) {
         ) : null}
         <Text style={styles.modalProductTitle}>{item.title}</Text>
         <Text style={styles.modalText}>Subasta: {item.auction}</Text>
-        <Text style={styles.modalText}>Total pagado: {item.amount}</Text>
+        <Text style={styles.modalText}>Total: {item.amount}</Text>
+        <Text style={styles.modalText}>Importe: {item.baseAmount}</Text>
+        <Text style={styles.modalText}>Comision: {item.commission}</Text>
+        <Text style={styles.modalText}>
+          Envio: {item.retiraPersonalmente ? 'No aplica por retiro personal' : item.shippingCost}
+        </Text>
+        {item.retiraPersonalmente ? (
+          <Text style={styles.modalStrongText}>Seguro eliminado por retiro personal.</Text>
+        ) : null}
         <Text style={styles.modalText}>Fecha de compra: {item.date}</Text>
         {item.details ? (
           <View style={styles.detailList}>

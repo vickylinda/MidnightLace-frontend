@@ -66,7 +66,21 @@ function ActivityIcon({ color }) {
   );
 }
 
-function ProfileIcon({ color }) {
+export function VerifyIcon({ color }) {
+  return (
+    <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 12.4L9.4 16.8L19.2 7"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.8}
+      />
+    </Svg>
+  );
+}
+
+export function ProfileIcon({ color }) {
   return (
     <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
       <Circle cx={12} cy={8.2} r={3.6} stroke={color} strokeWidth={2.2} />
@@ -84,11 +98,12 @@ export default function BottomNavigation({
   activeItem = 'inicio',
   hiddenItemIds = [],
   isInteractive = true,
+  items = navItems,
   onItemPress,
 }) {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, BOTTOM_NAV_MIN_BOTTOM_PADDING);
-  const visibleNavItems = navItems.filter(
+  const visibleNavItems = items.filter(
     (item) => !hiddenItemIds.includes(item.id)
   );
 

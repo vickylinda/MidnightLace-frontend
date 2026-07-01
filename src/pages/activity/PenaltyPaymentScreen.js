@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
+import { useNotifications } from '../../context/NotificationsContext';
 import { listPaymentMethods } from '../../services/paymentMethodsApi';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
 import { colors } from '../../theme/colors';
@@ -167,6 +168,7 @@ function hasInsufficientFunds(method, amount) {
 }
 
 export default function PenaltyPaymentScreen({ multa, onPaid }) {
+  const { lastEvent } = useNotifications() ?? {};
   const [methods, setMethods] = useState([]);
   const [loadingMethods, setLoadingMethods] = useState(true);
   const [methodsError, setMethodsError] = useState('');
@@ -195,6 +197,14 @@ export default function PenaltyPaymentScreen({ multa, onPaid }) {
   useEffect(() => {
     loadMethods();
   }, []);
+
+  useEffect(() => {
+    if (lastEvent?.evento !== 'medio_verificado') {
+      return;
+    }
+
+    loadMethods();
+  }, [lastEvent?.receivedAt]);
 
   async function handlePay() {
     if (!selectedMethod || !multa?.identificador) return;

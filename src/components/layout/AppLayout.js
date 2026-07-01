@@ -31,6 +31,7 @@ export default function AppLayout({
   floatingAction,
   isBottomNavigationInteractive = true,
   hiddenBottomNavItemIds,
+  bottomNavigationItems,
   onBackPress,
   onNavItemPress,
   enableSwipeBack = true,
@@ -45,13 +46,14 @@ export default function AppLayout({
   const isDraggingScrollRef = useRef(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const canSwipeBack = enableSwipeBack && typeof onBackPress === 'function';
+  const showsBottomNavigation = variant === 'app' || variant === 'admin';
   const swipeBackEdgeWidth = Math.min(48, Math.max(30, width * 0.1));
   const topBarHeight = TOP_BAR_HEIGHT + insets.top;
   const bottomNavHeight =
     BOTTOM_NAV_CONTENT_HEIGHT +
     Math.max(insets.bottom, BOTTOM_NAV_MIN_BOTTOM_PADDING);
 
-  const bottomInset = variant === 'app' ? bottomNavHeight : 0;
+  const bottomInset = showsBottomNavigation ? bottomNavHeight : 0;
   const keyboardBehavior =
     Platform.OS === 'ios'
       ? 'padding'
@@ -177,7 +179,7 @@ export default function AppLayout({
               styles.content,
               {
                 minHeight: contentHeight,
-                paddingBottom: variant === 'app' ? bottomInset + 18 : 0,
+                paddingBottom: showsBottomNavigation ? bottomInset + 18 : 0,
               },
             ]}
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
@@ -215,7 +217,7 @@ export default function AppLayout({
               <View style={styles.keyboardScrollSpacer} />
             ) : null}
 
-            {variant !== 'app' ? (
+            {!showsBottomNavigation ? (
               <Image
                 source={require('../../assets/decor/puntilla.png')}
                 style={styles.bottomLace}
@@ -225,11 +227,12 @@ export default function AppLayout({
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {variant === 'app' ? (
+        {showsBottomNavigation ? (
           <BottomNavigation
             activeItem={selectedNavItem}
             hiddenItemIds={hiddenBottomNavItemIds}
             isInteractive={isBottomNavigationInteractive}
+            items={bottomNavigationItems}
             onItemPress={onNavItemPress}
           />
         ) : null}

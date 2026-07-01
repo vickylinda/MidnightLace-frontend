@@ -1,7 +1,7 @@
 import { API_BASE_URL } from './config';
 import { getAccessToken } from './session';
 
-export function connectUserSocket(onEvent) {
+export function connectUserSocket(onEvent, options = {}) {
   let ws = null;
   let closed = false;
   let delay = 1000;
@@ -12,11 +12,17 @@ export function connectUserSocket(onEvent) {
     const token = getAccessToken() ?? '';
     ws = new WebSocket(`${base}/v1/ws/usuario?token=${encodeURIComponent(token)}`);
 
+    ws.onopen = () => {
+      delay = 1000;
+      options.onOpen?.();
+    };
+
     ws.onmessage = (e) => {
       try { onEvent(JSON.parse(e.data)); } catch {}
     };
 
     ws.onclose = (e) => {
+      options.onClose?.(e);
       // 4001 = invalid/expired token, no retry
       if (closed || e.code === 4001) return;
       const d = delay;
@@ -24,7 +30,9 @@ export function connectUserSocket(onEvent) {
       setTimeout(connect, d);
     };
 
-    ws.onerror = () => {};
+    ws.onerror = (e) => {
+      options.onError?.(e);
+    };
   }
 
   connect();
