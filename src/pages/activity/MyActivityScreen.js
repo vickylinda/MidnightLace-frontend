@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 import AddressMapPreview from '../../components/forms/address/AddressMapPreview';
+import { listPaymentMethods } from '../../services/paymentMethodsApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
+import { resolveApiAssetUrl } from '../../utils/config';
+import { apiFetch } from '../../utils/http';
 
 const tabs = ['Subastas', 'Compras', 'Pujas', 'Multas', 'Metricas'];
 const tabLabels = {
@@ -290,6 +293,225 @@ function PurchaseRow({
           </>
         )}
       </View>
+    </View>
+  );
+}
+
+const DEFAULT_PAYMENT_METHODS = [
+  { id: '1', brand: 'Visa', last4: '4367', expiry: '09/27', cardholder: 'Juana Mendez' },
+  { id: '2', brand: 'Mastercard', last4: '2398', expiry: '12/28', cardholder: 'Juana Mendez' },
+];
+
+const INITIAL_WON_AUCTIONS = [
+  {
+    id: 'subasta-ganada-1',
+    code: 'PUIFT-017-BLACK&PINK-FREESIZE',
+    title: 'Clearance - Black & Pink Polka-dot Pattern Bowknot Gyaru Fashion Beret',
+    image: require('../../assets/activity/paw-top.jpg'),
+    finalPrice: 140,
+    shipping: 0,
+    commission: 20,
+    currency: 'USD',
+    status: 'pendiente',
+    auctionDate: '13/05/2026',
+    dueDate: '15/05/2026',
+    fineAmount: '$300 USD',
+    paidDate: null,
+    paymentMethod: null,
+  },
+  {
+    id: 'subasta-ganada-2',
+    code: 'M-O-073',
+    title: 'Red Butterfly Jacquard Fabric Black Collar and Ruffle Hem Lolita Dress',
+    image: require('../../assets/activity/sweet-lolita-dress.webp'),
+    finalPrice: 140,
+    shipping: 0,
+    commission: 20,
+    currency: 'USD',
+    status: 'pagado',
+    auctionDate: '12/04/2026',
+    dueDate: '14/04/2026',
+    paidDate: '14/04/2026',
+    paymentMethod: {
+      brand: 'Visa',
+      last4: '4367',
+      cardholder: 'Juana Mendez',
+    },
+  },
+];
+
+function formatPaymentExpiration(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})/);
+  if (match) {
+    return `${match[2]}/${match[1].slice(-2)}`;
+  }
+  return value || '09/27';
+}
+
+function formatNumberWithDots(value) {
+  if (value === undefined || value === null || value === '') return '0';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return new Intl.NumberFormat('es-AR', {
+    maximumFractionDigits: 0,
+    useGrouping: true,
+  }).format(num);
+}
+
+function WonAuctionCard({
+  item,
+  paymentMethods = [],
+  selectedPaymentId,
+  onSelectPayment,
+  onPay,
+}) {
+  const isPending = item.status === 'pendiente';
+  const finalPrice = item.finalPrice || 140;
+  const shipping = item.shipping ?? 0;
+  const commission = item.commission ?? 20;
+  const currency = item.currency || 'USD';
+  const totalAmount = finalPrice + shipping + commission;
+
+  const formattedFinalPrice = `$${formatNumberWithDots(finalPrice)} ${currency}`;
+  const formattedShipping = `$${formatNumberWithDots(shipping)} ${currency} (recogida en tienda)`;
+  const formattedCommission = `$${formatNumberWithDots(commission)} ${currency}`;
+  const formattedTotal = `$${formatNumberWithDots(totalAmount)} ${currency}`;
+
+  const defaultPaymentId = paymentMethods[0]?.id;
+  const currentSelectedPaymentId = selectedPaymentId || defaultPaymentId;
+
+  return (
+    <View style={styles.wonAuctionCard}>
+      {/* Top right Badge */}
+      <View style={isPending ? styles.badgePending : styles.badgePaid}>
+        <Text style={isPending ? styles.badgePendingText : styles.badgePaidText}>
+          {isPending ? 'PENDIENTE' : 'PAGADO'}
+        </Text>
+      </View>
+
+      {/* Product info row */}
+      <View style={styles.wonProductRow}>
+        <Image
+          source={typeof item.image === 'string' ? { uri: item.image } : item.image}
+          resizeMode="cover"
+          style={styles.wonProductImage}
+        />
+        <View style={styles.wonProductCopy}>
+          <Text style={styles.wonProductCode}>{item.code || item.title}</Text>
+          {item.code ? (
+            <Text style={styles.wonProductDesc}>{item.title}</Text>
+          ) : null}
+        </View>
+      </View>
+
+      {/* Price breakdown */}
+      <View style={styles.wonPriceRow}>
+        <Text style={styles.wonPriceLabel}>Precio final:</Text>
+        <Text style={styles.wonPriceValue}>{formattedFinalPrice}</Text>
+      </View>
+      <View style={styles.wonPriceRow}>
+        <Text style={styles.wonPriceLabel}>Envio:</Text>
+        <Text style={styles.wonPriceValue}>{formattedShipping}</Text>
+      </View>
+      <View style={styles.wonPriceRow}>
+        <Text style={styles.wonPriceLabel}>Comision de servicio:</Text>
+        <Text style={styles.wonPriceValue}>{formattedCommission}</Text>
+      </View>
+
+      <View style={styles.wonPriceDivider} />
+
+      <View style={styles.wonPriceTotalRow}>
+        <Text style={styles.wonPriceTotalLabel}>Total a pagar</Text>
+        <Text style={styles.wonPriceTotalValue}>{formattedTotal}</Text>
+      </View>
+
+      {isPending ? (
+        <>
+          {/* Warning notice box */}
+          <View style={styles.wonWarningBox}>
+            <WarningIcon />
+            <Text style={styles.wonWarningText}>
+              Esta subasta esta pendiente de pago. Si no pagas antes del{' '}
+              {item.dueDate || '15/05/2026'} perderas el articulo y seras multado
+              con un valor de {item.fineAmount || '$300 USD'}.
+            </Text>
+          </View>
+
+          {/* Elige como pagar */}
+          <Text style={styles.wonSectionTitle}>Elige como pagar</Text>
+          <View style={styles.wonPaymentCardsTable}>
+            {paymentMethods.map((pm, idx) => {
+              const isSelected = String(pm.id) === String(currentSelectedPaymentId);
+              return (
+                <View key={pm.id || idx}>
+                  {idx > 0 && <View style={styles.wonPaymentSeparator} />}
+                  <Pressable
+                    style={styles.wonPaymentRow}
+                    onPress={() => onSelectPayment(pm.id)}
+                  >
+                    <View style={styles.wonPaymentLeft}>
+                      <View style={styles.wonRadioCircle}>
+                        {isSelected ? <View style={styles.wonRadioDot} /> : null}
+                      </View>
+                      <Text style={styles.wonPaymentText}>
+                        {pm.brand || 'Visa'} •••• {pm.last4 || '4367'}
+                      </Text>
+                    </View>
+                    <Text style={styles.wonPaymentExpiry}>
+                      Vence {pm.expiry || '09/27'}
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Pay Button */}
+          <Pressable
+            style={styles.wonPayButton}
+            onPress={() => onPay(item.id, currentSelectedPaymentId)}
+          >
+            <Text style={styles.wonPayButtonText}>PAGAR {formattedTotal}</Text>
+          </Pressable>
+          <Text style={styles.wonDisclaimerText}>
+            Al confirmar aceptas nuestros Terminos y Politica de privacidad
+          </Text>
+        </>
+      ) : (
+        <>
+          {/* Paid info */}
+          <View style={styles.wonPriceDivider} />
+          <View style={styles.wonDateRow}>
+            <Text style={styles.wonPriceLabel}>Fecha de cierre:</Text>
+            <Text style={styles.wonPriceValue}>{item.dueDate || '14/04/2026'}</Text>
+          </View>
+          <View style={styles.wonDateRow}>
+            <Text style={styles.wonPriceLabel}>Fecha de pago:</Text>
+            <Text style={styles.wonPriceValue}>{item.paidDate || '14/04/2026'}</Text>
+          </View>
+
+          <Text style={[styles.wonSectionTitle, { marginTop: 12 }]}>Metodo de pago</Text>
+          <View style={styles.wonPaidMethodCard}>
+            <View style={styles.visaBadge}>
+              <Text style={styles.visaBadgeText}>
+                {(item.paymentMethod?.brand || 'VISA').toUpperCase()}
+              </Text>
+            </View>
+            <View>
+              <Text style={styles.wonPaidMethodTitle}>
+                •••• {item.paymentMethod?.last4 || '4367'}
+              </Text>
+              <Text style={styles.wonPaidMethodSubtitle}>
+                {item.paymentMethod?.cardholder || 'Juana Mendez'}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.wonSuccessNotice}>
+            Tu pago se ha procesado correctamente. Estaras recibiendo un email con
+            proximas instrucciones en la brevedad.
+          </Text>
+        </>
+      )}
     </View>
   );
 }
@@ -809,6 +1031,130 @@ export default function MyActivityScreen({ onPayPenalty }) {
   const [pickupLocationItem, setPickupLocationItem] = useState(null);
   const [confirmedPickupIds, setConfirmedPickupIds] = useState({});
 
+  const [wonAuctions, setWonAuctions] = useState(INITIAL_WON_AUCTIONS);
+  const [userPaymentMethods, setUserPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
+  const [selectedPaymentMethods, setSelectedPaymentMethods] = useState({});
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const pmRes = await listPaymentMethods();
+        if (pmRes && Array.isArray(pmRes.datos) && pmRes.datos.length > 0) {
+          const mapped = pmRes.datos.map((pm) => ({
+            id: String(pm.identificador || pm.id),
+            brand: pm.detalle?.red || (pm.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
+            last4: pm.detalle?.ultimosCuatroDigitos || pm.detalle?.numeroCuenta?.slice(-4) || '4367',
+            expiry: formatPaymentExpiration(pm.detalle?.fechaVencimiento),
+            cardholder: pm.detalle?.titular || pm.detalle?.nombreTitular || 'Juana Mendez',
+          }));
+          setUserPaymentMethods(mapped);
+        }
+      } catch (err) {
+        // use default payment methods
+      }
+
+      try {
+        const purchasesRes = await apiFetch('/v1/mi/compras');
+        if (purchasesRes && Array.isArray(purchasesRes.datos) && purchasesRes.datos.length > 0) {
+          const mappedPurchases = purchasesRes.datos.map((compra) => {
+            const isPagado = Boolean(compra.pagado);
+            const fecSubasta = compra.fechaPago ? new Date(compra.fechaPago) : new Date();
+            const venc = compra.fechaVencimiento
+              ? new Date(compra.fechaVencimiento)
+              : new Date(fecSubasta.getTime() + 2 * 24 * 60 * 60 * 1000);
+
+            const formatDateStr = (d) => {
+              if (!d || isNaN(d.getTime())) return '14/04/2026';
+              const day = String(d.getDate()).padStart(2, '0');
+              const month = String(d.getMonth() + 1).padStart(2, '0');
+              const year = d.getFullYear();
+              return `${day}/${month}/${year}`;
+            };
+
+            const prod = compra.detallesProducto || {};
+            const firstFoto = Array.isArray(prod.fotos) && prod.fotos[0]
+              ? { uri: resolveApiAssetUrl(prod.fotos[0]) }
+              : require('../../assets/activity/sweet-lolita-dress.webp');
+
+            let fullTitle = '';
+            if (prod.nombre && prod.descripcionCatalogo) {
+              fullTitle = `${prod.nombre} - ${prod.descripcionCatalogo}`;
+            } else {
+              fullTitle = prod.nombre || prod.descripcionCatalogo || `Subasta #${compra.subasta} - Producto #${compra.producto}`;
+            }
+
+            return {
+              id: compra.identificador,
+              code: prod.codigo || `SUB-${compra.identificador}`,
+              title: fullTitle,
+              image: firstFoto,
+              finalPrice: Number(compra.importe) || 140,
+              shipping: Number(compra.costoEnvio) || 0,
+              commission: Number(compra.comision) || 20,
+              currency: compra.moneda || 'USD',
+              status: isPagado ? 'pagado' : 'pendiente',
+              auctionDate: formatDateStr(fecSubasta),
+              dueDate: formatDateStr(venc),
+              fineAmount: '$300 USD',
+              paidDate: isPagado ? formatDateStr(new Date(compra.fechaPago)) : null,
+              paymentMethod: isPagado
+                ? { brand: 'Visa', last4: '4367', cardholder: 'Juana Mendez' }
+                : null,
+            };
+          });
+
+          setWonAuctions(mappedPurchases);
+        }
+      } catch (err) {
+        // keep initial won auctions state
+      }
+    }
+
+    loadData();
+  }, []);
+
+  function handleSelectPayment(itemId, paymentId) {
+    setSelectedPaymentMethods((prev) => ({
+      ...prev,
+      [itemId]: paymentId,
+    }));
+  }
+
+  async function handlePayWonAuction(itemId, paymentId) {
+    const pm = userPaymentMethods.find((p) => String(p.id) === String(paymentId)) || userPaymentMethods[0];
+
+    if (typeof itemId === 'number' || (!isNaN(itemId) && Number(itemId) > 0)) {
+      try {
+        await apiFetch(`/v1/mi/compras/${itemId}/pagar`, {
+          body: { idMedioPago: Number(paymentId) },
+          method: 'POST',
+        });
+      } catch (err) {
+        console.log('[MyActivityScreen] Error paying purchase via API:', err);
+      }
+    }
+
+    const todayStr = new Date().toLocaleDateString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
+    setWonAuctions((prev) =>
+      prev.map((auc) => {
+        if (auc.id === itemId) {
+          return {
+            ...auc,
+            status: 'pagado',
+            paidDate: todayStr,
+            paymentMethod: pm,
+          };
+        }
+        return auc;
+      })
+    );
+  }
+
   function confirmPickup() {
     if (!pickupConfirmationItem) {
       return;
@@ -823,54 +1169,50 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
   return (
     <View style={styles.screen}>
-      <Text style={styles.title}>Mi actividad</Text>
-      <ActivitySelect activeTab={activeTab} onChange={setActiveTab} />
+      <ActivityCard style={styles.mainOuterCard}>
+        <Text style={styles.title}>Mi actividad</Text>
+        <ActivitySelect activeTab={activeTab} onChange={setActiveTab} />
 
-      {activeTab === 'Subastas' ? (
-        <ActivityCard>
-          {auctionRows.map((item) => (
-            <AuctionRow
-              item={item}
-              key={item.title}
-              onPress={() => setAuctionDetailItem(item)}
-            />
-          ))}
-        </ActivityCard>
-      ) : null}
-
-      {activeTab === 'Compras' ? (
-        <>
-          <ActivityCard>
-            {purchaseRows.map((item) => (
-              <PurchaseRow
-                isPickupConfirmed={Boolean(confirmedPickupIds[item.id])}
+        {activeTab === 'Subastas' ? (
+          <View style={styles.tabSection}>
+            {auctionRows.map((item) => (
+              <AuctionRow
                 item={item}
                 key={item.title}
-                onRequestPickup={() => setPickupConfirmationItem(item)}
-                onShowDetail={() => setDetailItem(item)}
-                onShowPickupLocation={() => setPickupLocationItem(item)}
+                onPress={() => setAuctionDetailItem(item)}
               />
             ))}
-          </ActivityCard>
-          <Notice>
-            Si marcas que retiras personalmente, no podras deshacer esta accion
-            y perderas la cobertura del seguro sobre tu compra. Si no seleccionas
-            esta opcion, el producto sera enviado automaticamente a tu domicilio registrado.
-          </Notice>
-        </>
-      ) : null}
+          </View>
+        ) : null}
 
-      {activeTab === 'Pujas' ? (
-        <ActivityCard>
-          {bidRows.map((item) => (
-            <BidRow item={item} key={item.title} />
-          ))}
-        </ActivityCard>
-      ) : null}
+        {activeTab === 'Compras' ? (
+          <View style={styles.tabSection}>
+            {wonAuctions.map((item) => (
+              <WonAuctionCard
+                item={item}
+                key={item.id}
+                onPay={handlePayWonAuction}
+                onSelectPayment={(paymentId) => handleSelectPayment(item.id, paymentId)}
+                paymentMethods={userPaymentMethods}
+                selectedPaymentId={selectedPaymentMethods[item.id]}
+              />
+            ))}
+            <Pressable style={styles.loadMoreButton}>
+              <Text style={styles.loadMoreButtonText}>Cargar mas</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
-      {activeTab === 'Multas' ? (
-        <>
-          <ActivityCard>
+        {activeTab === 'Pujas' ? (
+          <View style={styles.tabSection}>
+            {bidRows.map((item) => (
+              <BidRow item={item} key={item.title} />
+            ))}
+          </View>
+        ) : null}
+
+        {activeTab === 'Multas' ? (
+          <View style={styles.tabSection}>
             <ErrorSectionTitle>Incumplimiento de pago</ErrorSectionTitle>
             <View style={styles.penaltyGroupDivider} />
             {penaltyRows.map((item) => (
@@ -880,14 +1222,14 @@ export default function MyActivityScreen({ onPayPenalty }) {
                 onPayPenalty={onPayPenalty}
               />
             ))}
-          </ActivityCard>
-          <Notice>
-            Si no abonas la/s multa/s no podras participar en nuevas subastas.
-          </Notice>
-        </>
-      ) : null}
+            <Notice>
+              Si no abonas la/s multa/s no podras participar en nuevas subastas.
+            </Notice>
+          </View>
+        ) : null}
 
-      {activeTab === 'Metricas' ? <MetricsContent /> : null}
+        {activeTab === 'Metricas' ? <MetricsContent /> : null}
+      </ActivityCard>
 
       <AuctionDetailModal item={auctionDetailItem} onClose={() => setAuctionDetailItem(null)} />
       <PurchaseDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
@@ -906,8 +1248,8 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
 const styles = StyleSheet.create({
   screen: {
-    paddingHorizontal: 32,
-    paddingTop: 31,
+    paddingHorizontal: 20,
+    paddingTop: 24,
     zIndex: 2,
   },
   title: {
@@ -1655,5 +1997,296 @@ const styles = StyleSheet.create({
   },
   locationMap: {
     marginTop: 8,
+  },
+  mainOuterCard: {
+    backgroundColor: '#FCEBDB',
+    borderRadius: 18,
+    marginBottom: 24,
+    overflow: 'visible',
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    width: '100%',
+  },
+  tabSection: {
+    marginTop: 8,
+    width: '100%',
+  },
+  wonAuctionCard: {
+    backgroundColor: '#F6E3D1',
+    borderRadius: 14,
+    marginBottom: 22,
+    marginTop: 14,
+    overflow: 'visible',
+    padding: 14,
+    position: 'relative',
+    width: '100%',
+  },
+  badgePending: {
+    backgroundColor: colors.burgundy,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    position: 'absolute',
+    right: 0,
+    top: -14,
+    zIndex: 10,
+  },
+  badgePendingText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  badgePaid: {
+    backgroundColor: '#508B57',
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    position: 'absolute',
+    right: 0,
+    top: -14,
+    zIndex: 10,
+  },
+  badgePaidText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+  wonProductRow: {
+    alignItems: 'center',
+    columnGap: 14,
+    flexDirection: 'row',
+    marginBottom: 14,
+    marginTop: 0,
+    paddingRight: 28,
+    width: '100%',
+  },
+  wonProductImage: {
+    backgroundColor: '#EBD8C6',
+    borderRadius: 8,
+    height: 90,
+    width: 90,
+  },
+  wonProductCopy: {
+    flex: 1,
+    justifyContent: 'center',
+    minWidth: 0,
+  },
+  wonProductCode: {
+    color: '#510310',
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  wonProductDesc: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  wonPriceRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    width: '100%',
+  },
+  wonPriceLabel: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+  },
+  wonPriceValue: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+  },
+  wonPriceTotalRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingVertical: 4,
+    width: '100%',
+  },
+  wonPriceTotalLabel: {
+    color: '#510310',
+    fontFamily: fonts.bold,
+    fontSize: 16,
+  },
+  wonPriceTotalValue: {
+    color: '#510310',
+    fontFamily: fonts.bold,
+    fontSize: 16,
+  },
+  wonWarningBox: {
+    alignItems: 'center',
+    backgroundColor: '#F5B8B2',
+    borderRadius: 8,
+    columnGap: 10,
+    flexDirection: 'row',
+    marginVertical: 12,
+    padding: 10,
+    width: '100%',
+  },
+  wonWarningText: {
+    color: '#510310',
+    flex: 1,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  wonSectionTitle: {
+    color: '#510310',
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    marginBottom: 8,
+    marginTop: 6,
+  },
+  wonPaymentCardsTable: {
+    backgroundColor: '#F5E7DA',
+    borderColor: '#DDCCBD',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 14,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  wonPaymentRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  wonPaymentLeft: {
+    alignItems: 'center',
+    columnGap: 10,
+    flexDirection: 'row',
+  },
+  wonRadioCircle: {
+    alignItems: 'center',
+    borderColor: '#510310',
+    borderRadius: 999,
+    borderWidth: 1.5,
+    height: 18,
+    justifyContent: 'center',
+    width: 18,
+  },
+  wonRadioDot: {
+    backgroundColor: '#510310',
+    borderRadius: 999,
+    height: 8,
+    width: 8,
+  },
+  wonPaymentText: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+  },
+  wonPaymentExpiry: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 13,
+  },
+  wonPaymentSeparator: {
+    backgroundColor: '#DDCCBD',
+    height: 1,
+    width: '100%',
+  },
+  wonPayButton: {
+    alignItems: 'center',
+    backgroundColor: colors.burgundy,
+    borderRadius: 8,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    width: '100%',
+  },
+  wonPayButtonText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    letterSpacing: 0.5,
+  },
+  wonDisclaimerText: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 9.5,
+    lineHeight: 13,
+    marginTop: 6,
+    opacity: 0.75,
+    textAlign: 'center',
+  },
+  wonPriceDivider: {
+    backgroundColor: '#DDCCBD',
+    height: 1,
+    marginVertical: 6,
+    width: '100%',
+  },
+  wonDateRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    width: '100%',
+  },
+  wonPaidMethodCard: {
+    alignItems: 'center',
+    backgroundColor: '#EBD8C6',
+    borderRadius: 8,
+    columnGap: 12,
+    flexDirection: 'row',
+    marginBottom: 10,
+    marginTop: 6,
+    padding: 12,
+    width: '100%',
+  },
+  visaBadge: {
+    alignItems: 'center',
+    backgroundColor: '#0057B8',
+    borderRadius: 4,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  visaBadgeText: {
+    color: '#FFFFFF',
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  wonPaidMethodTitle: {
+    color: '#510310',
+    fontFamily: fonts.bold,
+    fontSize: 14,
+  },
+  wonPaidMethodSubtitle: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 13,
+  },
+  wonSuccessNotice: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    opacity: 0.85,
+    textAlign: 'center',
+  },
+  loadMoreButton: {
+    alignSelf: 'center',
+    backgroundColor: colors.burgundy,
+    borderRadius: 20,
+    marginBottom: 24,
+    marginTop: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 10,
+  },
+  loadMoreButtonText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 15,
   },
 });

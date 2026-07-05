@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Pressable,
   StyleSheet,
@@ -15,10 +16,12 @@ import {
   getAuctionDetails,
   getActiveItem,
 } from '../../services/auctionsApi';
+import SubastadoStamp from '../../components/status/SubastadoStamp';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
 import { getAccessToken } from '../../utils/session';
+import { apiFetch } from '../../utils/http';
 
 const referenceColors = {
   card: '#F6E3D1',
@@ -38,7 +41,7 @@ function LocationPinIcon({ size = 31 }) {
   );
 }
 
-function formatPrice(value, currency) {
+function formatPrice(value) {
   if (value === undefined || value === null || value === '') {
     return '-';
   }
@@ -54,7 +57,7 @@ function formatPrice(value, currency) {
     minimumFractionDigits: 0,
   }).format(amount);
 
-  return currency ? `${formattedAmount} ${currency}` : formattedAmount;
+  return `$ ${formattedAmount}`;
 }
 
 function getAuctionStartDate(dateValue, timeValue) {
@@ -166,6 +169,115 @@ function formatActiveTimeCard(totalSecs) {
   return `${pad(mins)}:${pad(secs)}`;
 }
 
+function BiddersAvatarStack({ bidders = [], totalCount = 0 }) {
+  const popAnim = useRef(new Animated.Value(0)).current;
+  const prevTopIdRef = useRef(null);
+
+  const topBidderId = bidders && bidders[0]?.id;
+
+  useEffect(() => {
+    if (topBidderId && topBidderId !== prevTopIdRef.current) {
+      prevTopIdRef.current = topBidderId;
+      popAnim.setValue(0);
+      Animated.spring(popAnim, {
+        toValue: 1,
+        friction: 5,
+        tension: 85,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [topBidderId, popAnim]);
+
+  if (!bidders || bidders.length === 0) {
+    return null;
+  }
+
+  const visible = bidders.slice(0, 4);
+  const recent = visible.slice(0, 2);
+  const older = visible.slice(2, 4);
+
+  return (
+    <View style={styles.avatarStackWrapper}>
+      {/* 2 Most Recent Bids (Large, on the left) */}
+      <View style={styles.recentAvatarsRow}>
+        {recent.map((b, idx) => {
+          const isFirst = idx === 0;
+          return (
+            <Animated.View
+              key={String(b.id || idx)}
+              style={[
+                styles.recentAvatarItem,
+                idx > 0 && { marginLeft: -6 },
+                { zIndex: 10 - idx },
+                isFirst
+                  ? {
+                      transform: [
+                        {
+                          scale: popAnim.interpolate({
+                            inputRange: [0, 0.5, 1],
+                            outputRange: [0.2, 1.25, 1],
+                          }),
+                        },
+                      ],
+                      opacity: popAnim,
+                    }
+                  : null,
+              ]}
+            >
+              {b.photo ? (
+                <Image
+                  source={{ uri: resolveApiAssetUrl(b.photo) }}
+                  style={styles.avatarImg}
+                />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarFallbackText}>
+                    {b.name?.charAt(0)?.toUpperCase() || 'C'}
+                  </Text>
+                </View>
+              )}
+            </Animated.View>
+          );
+        })}
+      </View>
+
+      {/* Pujas Badge with Older Bids sticking out behind top edge */}
+      <View style={styles.badgeWithOlderContainer}>
+        {older.length > 0 ? (
+          <View style={styles.olderAvatarsRow}>
+            {older.map((b, idx) => (
+              <View
+                key={String(b.id || idx)}
+                style={[
+                  styles.olderAvatarItem,
+                  idx > 0 && { marginLeft: -4 },
+                ]}
+              >
+                {b.photo ? (
+                  <Image
+                    source={{ uri: resolveApiAssetUrl(b.photo) }}
+                    style={styles.avatarImg}
+                  />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Text style={[styles.avatarFallbackText, { fontSize: 9 }]}>
+                      {b.name?.charAt(0)?.toUpperCase() || 'C'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.pujasBadge}>
+          <Text style={styles.pujasBadgeText}>{`${totalCount} ${totalCount === 1 ? 'puja' : 'pujas'}`}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 function ProductLotCard({
   currency,
   imageSize,
@@ -175,6 +287,7 @@ function ProductLotCard({
   isFinished,
   activeItemData,
   now,
+  biddersInfo,
 }) {
   const identifier = lot.identificador ?? lot.idProducto;
   const imageSource = getFirstPhotoSource(lot);
@@ -184,12 +297,36 @@ function ProductLotCard({
     ? `${productName} - ${lot.descripcionCatalogo}`
     : productName;
 
+  const isLoggedIn = Boolean(getAccessToken());
+
   let activeItemRemainingSecs = 0;
   const activeEndTime = activeItemData?.finalizaEn ?? activeItemData?.finaliza_en;
   if (isActive && activeEndTime) {
     const endTime = new Date(activeEndTime).getTime();
     activeItemRemainingSecs = Math.max(0, Math.floor((endTime - now) / 1000));
   }
+
+  const neonPulse = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    if (!isActive) return;
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(neonPulse, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: false,
+        }),
+        Animated.timing(neonPulse, {
+          toValue: 0.5,
+          duration: 900,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [isActive, neonPulse]);
 
   return (
     <Pressable
@@ -204,7 +341,20 @@ function ProductLotCard({
         pressed && !isFinished ? styles.productCardPressed : null,
       ]}
     >
-      <View style={{ height: imageSize, width: imageSize, position: 'relative', borderTopLeftRadius: 5, borderBottomLeftRadius: 5, overflow: 'hidden' }}>
+      <View
+        style={{
+          height: isActive ? imageSize + 2 : imageSize,
+          width: isActive ? imageSize + 1 : imageSize,
+          position: 'relative',
+          borderTopLeftRadius: isActive ? 3 : 5,
+          borderBottomLeftRadius: isActive ? 3 : 5,
+          marginTop: isActive ? -1 : 0,
+          marginLeft: isActive ? -1 : 0,
+          marginBottom: isActive ? -1 : 0,
+          overflow: 'hidden',
+          backgroundColor: '#000000',
+        }}
+      >
         {imageSource ? (
           <Image
             accessibilityLabel={`Foto de ${productName}`}
@@ -223,17 +373,18 @@ function ProductLotCard({
             <Text style={styles.productImageFallbackText}>Sin foto</Text>
           </View>
         )}
+        {isFinished ? <SubastadoStamp /> : null}
       </View>
 
       <View style={styles.productBody}>
         <View>
-          <Text numberOfLines={1} style={styles.productCode}>
+          <Text numberOfLines={1} style={[styles.productCode, isFinished ? { color: '#555555' } : null]}>
             ID #{identifier ?? '-'}
           </Text>
-          <Text numberOfLines={isActive ? 2 : 4} style={styles.productTitle}>
+          <Text numberOfLines={isActive ? 2 : 4} style={[styles.productTitle, isFinished ? { color: '#444444' } : null]}>
             {title}
           </Text>
-          {isActive ? (
+          {isActive && isLoggedIn ? (
             <Text style={styles.activePriceLabel}>
               Precio inicial: {formatPrice(lot.precioBase, currency)}
             </Text>
@@ -242,10 +393,13 @@ function ProductLotCard({
 
         <View style={styles.productFooter}>
           {isActive ? (
-            <View style={{ flex: 1, marginTop: 4 }}>
-              <Text numberOfLines={1} style={styles.activePriceValue}>
-                {formatPrice(activeItemData?.mejorOferta ?? activeItemData?.mejor_oferta ?? lot.precioBase, currency)}
-              </Text>
+            <View style={{ flex: 1, marginTop: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', columnGap: 8, flexWrap: 'nowrap', marginBottom: 2 }}>
+                <Text numberOfLines={1} style={[styles.activePriceValue, { marginBottom: 0 }]}>
+                  {formatPrice(activeItemData?.mejorOferta ?? activeItemData?.mejor_oferta ?? lot.precioBase, currency)}
+                </Text>
+                <BiddersAvatarStack bidders={biddersInfo?.recentBidders} totalCount={biddersInfo?.totalCount} />
+              </View>
               <Text style={styles.activeTimeLabel}>
                 Tiempo restante:{' '}
                 <Text style={styles.activeTimeValue}>
@@ -253,17 +407,45 @@ function ProductLotCard({
                 </Text>
               </Text>
             </View>
+          ) : isFinished ? (
+            <View style={styles.priceBlock}>
+              <Text style={[styles.priceLabel, { color: '#555555' }]}>Precio final:</Text>
+              <Text numberOfLines={1} style={[styles.priceValue, { color: '#444444' }]}>
+                {formatPrice(lot.mejorOferta ?? lot.mejor_oferta ?? lot.precioFinal ?? lot.precio_final ?? lot.precioBase, currency)}
+              </Text>
+            </View>
           ) : (
             <>
-              <View style={styles.priceBlock}>
-                <Text style={styles.priceLabel}>Precio base</Text>
-                <Text numberOfLines={1} style={styles.priceValue}>
-                  {formatPrice(lot.precioBase, currency)}
-                </Text>
-              </View>
+              {isLoggedIn ? (
+                <View style={styles.priceBlock}>
+                  <Text style={styles.priceLabel}>Precio base</Text>
+                  <Text numberOfLines={1} style={styles.priceValue}>
+                    {formatPrice(lot.precioBase, currency)}
+                  </Text>
+                </View>
+              ) : null}
 
-              <View style={styles.statusBadge}>
-                <Text numberOfLines={1} style={styles.statusBadgeText}>
+              <View
+                style={[
+                  styles.statusBadge,
+                  String(status).toLowerCase() === 'nuevo'
+                    ? styles.statusBadgeNuevo
+                    : String(status).toLowerCase() === 'usado'
+                    ? styles.statusBadgeUsado
+                    : null,
+                ]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.statusBadgeText,
+                    String(status).toLowerCase() === 'nuevo'
+                      ? styles.statusBadgeTextNuevo
+                      : String(status).toLowerCase() === 'usado'
+                      ? styles.statusBadgeTextUsado
+                      : null,
+                  ]}
+                >
                   {status.toUpperCase()}
                 </Text>
               </View>
@@ -272,9 +454,20 @@ function ProductLotCard({
         </View>
       </View>
       {isActive ? (
-        <View style={styles.activeBadge}>
+        <Animated.View
+          style={[
+            styles.activeBadge,
+            {
+              shadowRadius: neonPulse.interpolate({
+                inputRange: [0.5, 1],
+                outputRange: [6, 14],
+              }),
+              shadowOpacity: neonPulse,
+            },
+          ]}
+        >
           <Text style={styles.activeBadgeText}>SUBASTANDO AHORA</Text>
-        </View>
+        </Animated.View>
       ) : null}
     </Pressable>
   );
@@ -296,6 +489,7 @@ export default function AuctionDetailScreen({
   const [lots, setLots] = useState([]);
   const [now, setNow] = useState(() => Date.now());
   const [activeItem, setActiveItem] = useState(null);
+  const [recentBiddersMap, setRecentBiddersMap] = useState({});
   const wsRef = useRef(null);
   const hasRefreshedForStartRef = useRef(false);
   const [wsStatus, setWsStatus] = useState('disconnected');
@@ -483,9 +677,30 @@ export default function AuctionDetailScreen({
     let active = true;
 
     getActiveItem(resolvedAuctionId)
-      .then((data) => {
+      .then(async (data) => {
         if (active) {
           setActiveItem(data);
+          const activeItemId = data?.idItem ?? data?.id_item;
+          if (activeItemId) {
+            try {
+              const bidsRes = await apiFetch(`/v1/subastas/${resolvedAuctionId}/items/${activeItemId}/pujas?pagina=1&cantidad=20`);
+              const bidsList = Array.isArray(bidsRes) ? bidsRes : (bidsRes?.datos ?? []);
+              const totalCount = bidsRes?.meta?.total ?? bidsList.length;
+              
+              const recentBidders = [...bidsList].reverse().map((b) => ({
+                id: b.identificador,
+                name: b.nombreUsuario ?? b.nombre_usuario ?? 'Comprador',
+                photo: b.fotoPerfil ?? b.urlFotoPerfil ?? b.foto_perfil ?? b.url_foto_perfil ?? null,
+              })).slice(0, 4);
+
+              setRecentBiddersMap((prevMap) => ({
+                ...prevMap,
+                [activeItemId]: { totalCount, recentBidders },
+              }));
+            } catch (err) {
+              console.log('Error loading initial bids for active item:', err);
+            }
+          }
         }
       })
       .catch((err) => {
@@ -507,7 +722,26 @@ export default function AuctionDetailScreen({
         if (message.evento === 'nuevaPuja') {
           const datos = message.datos;
           const datosIdItem = datos?.idItem ?? datos?.id_item;
-          if (active) {
+          if (active && datosIdItem) {
+            const newBidder = {
+              id: datos.idPuja ?? datos.id_puja ?? Date.now(),
+              name: datos.nombreUsuario ?? datos.nombre_usuario ?? 'Comprador',
+              photo: datos.fotoPerfil ?? datos.urlFotoPerfil ?? datos.foto_perfil ?? datos.url_foto_perfil ?? null,
+            };
+
+            setRecentBiddersMap((prevMap) => {
+              const current = prevMap[datosIdItem] || { totalCount: 0, recentBidders: [] };
+              const filtered = (current.recentBidders || []).filter((b) => b.name !== newBidder.name);
+              const updatedList = [newBidder, ...filtered].slice(0, 4);
+              return {
+                ...prevMap,
+                [datosIdItem]: {
+                  totalCount: (current.totalCount || 0) + 1,
+                  recentBidders: updatedList,
+                },
+              };
+            });
+
             setActiveItem((current) => {
               const currentIdItem = current?.idItem ?? current?.id_item;
               if (current && Number(currentIdItem) === Number(datosIdItem)) {
@@ -533,7 +767,8 @@ export default function AuctionDetailScreen({
               setLots((currentLots) =>
                 currentLots.map((lot) => {
                   if (Number(lot.identificador) === Number(prevIdItem)) {
-                    return { ...lot, subastado: 'si' };
+                    const finalPrice = datos.itemAnterior.mejorOferta ?? datos.itemAnterior.mejor_oferta ?? datos.itemAnterior.precioFinal ?? datos.itemAnterior.precio_final;
+                    return { ...lot, subastado: 'si', mejorOferta: finalPrice ?? lot.mejorOferta };
                   }
                   return lot;
                 })
@@ -701,6 +936,7 @@ export default function AuctionDetailScreen({
                     isFinished={isFinished}
                     activeItemData={activeItem}
                     now={now + serverTimeOffsetRef.current}
+                    biddersInfo={recentBiddersMap[lot.identificador] || recentBiddersMap[lot.idProducto]}
                   />
                 );
               })}
@@ -922,20 +1158,36 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     alignItems: 'center',
-    backgroundColor: colors.burgundy,
-    borderRadius: 5,
+    backgroundColor: 'rgba(81, 3, 16, 0.12)',
+    borderColor: colors.burgundy,
+    borderRadius: 4,
+    borderWidth: 1,
     height: 23,
     justifyContent: 'center',
     maxWidth: 116,
     minWidth: 66,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
+  },
+  statusBadgeNuevo: {
+    backgroundColor: 'rgba(92, 176, 74, 0.15)',
+    borderColor: '#498E3C',
+  },
+  statusBadgeUsado: {
+    backgroundColor: 'rgba(224, 102, 28, 0.15)',
+    borderColor: '#E0661C',
   },
   statusBadgeText: {
-    color: colors.white,
+    color: colors.burgundy,
     fontFamily: fonts.bold,
     fontSize: 11,
-    letterSpacing: 0,
+    letterSpacing: 0.5,
     lineHeight: 14,
+  },
+  statusBadgeTextNuevo: {
+    color: '#2E6B23',
+  },
+  statusBadgeTextUsado: {
+    color: '#D35400',
   },
   loadMoreButton: {
     alignItems: 'center',
@@ -985,33 +1237,42 @@ const styles = StyleSheet.create({
   productCardActive: {
     borderWidth: 3,
     borderColor: colors.burgundy,
-    borderRadius: 5,
+    borderRadius: 6,
     overflow: 'visible',
     shadowColor: colors.burgundy,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 10,
+    elevation: 10,
   },
   productCardFinished: {
-    backgroundColor: '#E6DED8',
-    opacity: 0.6,
+    backgroundColor: '#C8B2A0',
+    opacity: 0.9,
   },
   activeBadge: {
     position: 'absolute',
     bottom: -10,
     left: -6,
     backgroundColor: colors.burgundy,
+    borderWidth: 0,
     borderRadius: 4,
     paddingHorizontal: 12,
     paddingVertical: 5,
     zIndex: 10,
+    shadowColor: colors.burgundy,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 10,
+    elevation: 10,
   },
   activeBadgeText: {
-    color: colors.white,
+    color: '#FFFFFF',
     fontFamily: fonts.bold,
     fontSize: 10,
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    textShadowColor: colors.burgundy,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
   },
   activePriceLabel: {
     color: referenceColors.text,
@@ -1037,5 +1298,95 @@ const styles = StyleSheet.create({
   activeTimeValue: {
     color: colors.burgundy,
     fontFamily: fonts.bold,
+  },
+  avatarStackWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recentAvatarsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  recentAvatarItem: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    overflow: 'hidden',
+    backgroundColor: colors.cardBlush,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 1,
+    elevation: 3,
+  },
+  badgeWithOlderContainer: {
+    position: 'relative',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginLeft: -6,
+    zIndex: 1,
+  },
+  olderAvatarsRow: {
+    position: 'absolute',
+    top: -14,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  olderAvatarItem: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    overflow: 'hidden',
+    backgroundColor: colors.cardBlush,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: colors.burgundy,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarFallbackText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 9,
+  },
+  pujasBadge: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(81, 3, 16, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    zIndex: 2,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1.5,
+    elevation: 2,
+  },
+  pujasBadgeText: {
+    color: referenceColors.text,
+    fontFamily: fonts.medium,
+    fontSize: 10,
   },
 });

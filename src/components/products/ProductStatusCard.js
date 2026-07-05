@@ -1,5 +1,6 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import SubastadoStamp from '../status/SubastadoStamp';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 
@@ -40,6 +41,7 @@ export default function ProductStatusCard({
   title,
 }) {
   const Container = onPress ? Pressable : View;
+  const isSubastado = status === 'sold' || status === 'subastado' || String(statusLabel).toLowerCase().includes('subastad') || String(statusLabel).toLowerCase().includes('vendid');
 
   return (
     <Container
@@ -54,6 +56,9 @@ export default function ProductStatusCard({
       <View style={styles.imageFrame}>
         {imageSource ? (
           <Image resizeMode="contain" source={imageSource} style={styles.image} />
+        ) : null}
+        {isSubastado ? (
+          <SubastadoStamp style={{ borderRadius: 4 }} textStyle={{ fontSize: 13 }} />
         ) : null}
       </View>
 

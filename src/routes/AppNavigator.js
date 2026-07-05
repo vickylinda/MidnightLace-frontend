@@ -415,7 +415,10 @@ export default function AppNavigator() {
     >
       {currentRoute === ROUTES.auctionProduct ? (
         selectedAuctionProduct ? (
-          <AuctionProductScreen product={selectedAuctionProduct} />
+          <AuctionProductScreen
+            product={selectedAuctionProduct}
+            subastaId={selectedAuction?.identificador ?? selectedAuction?.id}
+          />
         ) : null
       ) : currentRoute === ROUTES.auctionDetail ? (
         selectedAuction ? (
