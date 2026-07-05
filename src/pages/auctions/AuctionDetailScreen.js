@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
-  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -9,7 +8,6 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useEffect, useState } from 'react';
 import Svg, { Path } from 'react-native-svg';
 
 import {
@@ -20,6 +18,7 @@ import {
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
+import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
 
 const referenceColors = {
