@@ -9,6 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { useEffect, useState } from 'react';
 import Svg, { Path } from 'react-native-svg';
 
 import {
@@ -902,6 +903,17 @@ export default function AuctionDetailScreen({
             </View>
           </View>
         </View>
+
+        {canStartNow ? (
+          <Pressable
+            disabled={starting}
+            onPress={handleStartNow}
+            style={[styles.startNowButton, starting ? styles.startNowButtonDisabled : null]}
+          >
+            <Text style={styles.startNowText}>{starting ? 'INICIANDO...' : 'INICIAR AHORA'}</Text>
+          </Pressable>
+        ) : null}
+        {message ? <Text style={styles.message}>{message}</Text> : null}
 
         {isLoading ? (
           <View style={styles.feedbackCard}>

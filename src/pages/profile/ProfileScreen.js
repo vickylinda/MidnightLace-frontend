@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -24,6 +24,7 @@ import PasswordChecklist, {
 } from '../../components/forms/auth/PasswordChecklist';
 import PrimaryButton from '../../components/forms/controls/PrimaryButton';
 import PaymentMethodsScreen from '../signup/PaymentMethodsScreen';
+import { useNotifications } from '../../context/NotificationsContext';
 import {
   deletePaymentMethod,
   listCountries,
@@ -124,6 +125,35 @@ function getProfileInitials(profile) {
   return initials || '?';
 }
 
+function isAuctioneerProfile(profile) {
+  const roleValues = [
+    profile?.rol,
+    profile?.role,
+    profile?.tipoUsuario,
+    profile?.tipo_usuario,
+    ...(Array.isArray(profile?.roles) ? profile.roles : []),
+  ];
+
+  return (
+    Boolean(profile?.subastador || profile?.matricula || profile?.region) ||
+    roleValues.some((value) =>
+      String(value || '').toLowerCase().includes('subastador')
+    )
+  );
+}
+
+function profileFieldValue(profile, ...fieldNames) {
+  for (const fieldName of fieldNames) {
+    const value = profile?.[fieldName];
+
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+
+  return '';
+}
+
 function paymentPresentation(payment) {
   const detail = payment.detalle || {};
 
@@ -139,10 +169,12 @@ function paymentPresentation(payment) {
   }
 
   if (payment.tipo === 'chequeCertificado') {
+    const availableAmount =
+      detail.montoDisponible ?? detail.montoGarantizado ?? 0;
     return {
       icon: 'check',
       lines: [
-        `${payment.moneda || 'ARS'} ${detail.montoGarantizado || 0}`,
+        `${payment.moneda || 'ARS'} ${availableAmount}`,
         `Entrega: ${detail.fechaEntrega || '-'}`,
       ],
       title: 'Cheque certificado',
@@ -158,6 +190,29 @@ function paymentPresentation(payment) {
       `Vencimiento: ${formatPaymentExpiration(detail.fechaVencimiento)}`,
     ],
     title: 'Tarjeta de crédito',
+  };
+}
+
+function paymentVerificationPresentation(payment) {
+  const status = String(payment?.verificado || '').toLowerCase();
+
+  if (status === 'si' || status === 'verificado') {
+    return {
+      label: 'Estado: verificado',
+      style: styles.paymentStatusVerified,
+    };
+  }
+
+  if (status === 'no' || status === 'no verificado') {
+    return {
+      label: 'Estado: no verificado',
+      style: styles.paymentStatusRejected,
+    };
+  }
+
+  return {
+    label: 'Estado: no verificado',
+    style: styles.paymentStatusRejected,
   };
 }
 
@@ -809,6 +864,7 @@ function LogoutModal({ onClose, onConfirm, visible }) {
 
 export default function ProfileScreen({ onLogout }) {
   const { showToast } = useToast();
+  const { lastEvent } = useNotifications() ?? {};
   const [address, setAddress] = useState(INITIAL_ADDRESS);
   const [countries, setCountries] = useState([]);
   const [dniFiles, setDniFiles] = useState([]);
@@ -821,6 +877,7 @@ export default function ProfileScreen({ onLogout }) {
   const [profile, setProfile] = useState(null);
   const [profileImage, setProfileImage] = useState(null);
   const [savingSection, setSavingSection] = useState('');
+  const isAuctioneer = isAuctioneerProfile(profile);
   const addressDisplay = buildAddressDisplayValue(address);
 
   function profileField(data, camelName, snakeName) {
@@ -904,14 +961,20 @@ export default function ProfileScreen({ onLogout }) {
     setPageError('');
 
     try {
-      const [profileResult, paymentResult, countryResult] = await Promise.all([
-        getProfile(),
-        listPaymentMethods(),
-        listCountries(),
-      ]);
+      const profileResult = await getProfile();
       hydrateProfile(profileResult);
-      setPayments(paymentResult?.datos || []);
-      setCountries(countryResult?.datos || []);
+
+      if (isAuctioneerProfile(profileResult)) {
+        setPayments([]);
+        setCountries([]);
+      } else {
+        const [paymentResult, countryResult] = await Promise.all([
+          listPaymentMethods(),
+          listCountries(),
+        ]);
+        setPayments(paymentResult?.datos || []);
+        setCountries(countryResult?.datos || []);
+      }
     } catch (error) {
       setPageError(
         getApiErrorMessage(error, 'No pudimos cargar los datos de tu perfil.')
@@ -926,6 +989,17 @@ export default function ProfileScreen({ onLogout }) {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (
+      lastEvent?.evento !== 'medio_verificado' &&
+      lastEvent?.evento !== 'cuenta_verificada'
+    ) {
+      return;
+    }
+
+    loadData({ showLoader: false });
+  }, [lastEvent?.receivedAt]);
 
   async function applyProfileImage(asset) {
     if (!asset?.uri) {
@@ -1152,6 +1226,13 @@ export default function ProfileScreen({ onLogout }) {
     'fechaActualizacionFotoDni',
     'fecha_actualizacion_foto_dni'
   );
+  const auctioneerData = profile?.subastador || {};
+  const auctioneerLicense =
+    profileFieldValue(auctioneerData, 'matricula') ||
+    profileFieldValue(profile, 'matricula');
+  const auctioneerRegion =
+    profileFieldValue(auctioneerData, 'region') ||
+    profileFieldValue(profile, 'region');
 
   if (loading) {
     return (
@@ -1209,7 +1290,9 @@ export default function ProfileScreen({ onLogout }) {
           <View style={styles.categoryPill}>
             <CrownIcon />
             <Text style={styles.categoryText}>
-              Categoría: {capitalizeCategory(profile?.categoria)}
+              {isAuctioneer
+                ? 'Subastador'
+                : `Categoría: ${capitalizeCategory(profile?.categoria)}`}
             </Text>
           </View>
           {savingSection === 'profile-image' ? (
@@ -1221,100 +1304,133 @@ export default function ProfileScreen({ onLogout }) {
       <SectionCard title="Datos personales">
         <InfoRow label="Nombre" value={profile?.nombre || '-'} />
         <InfoRow label="Apellido" value={profile?.apellido || '-'} />
-        <InfoRow label="País" value={address.country || '-'} />
-        <InfoRow
-          action={
-            <IconButton
-              accessibilityLabel="Editar domicilio"
-              onPress={() => setModal('address')}
-            >
-              <EditIcon />
-            </IconButton>
-          }
-          label="Domicilio"
-          value={addressDisplay || '-'}
-        />
-        <InfoRow
-          action={
-            <IconButton
-              accessibilityLabel="Editar fotos DNI"
-              onPress={() => setModal('dni')}
-            >
-              <UploadSmallIcon />
-            </IconButton>
-          }
-          label="Fotos DNI"
-          value={
-            dniUpdatedAt
-              ? `Actualizadas: ${String(dniUpdatedAt).slice(0, 10)}`
-              : 'Sin fecha de actualización'
-          }
-        />
+        {isAuctioneer ? (
+          <>
+            <InfoRow
+              label="Usuario"
+              value={
+                profileFieldValue(profile, 'nombreUsuario', 'nombre_usuario') ||
+                '-'
+              }
+            />
+            <InfoRow label="Email" value={profile?.email || '-'} />
+            <InfoRow label="Documento" value={profile?.documento || '-'} />
+            <InfoRow label="Matrícula" value={auctioneerLicense || '-'} />
+            <InfoRow label="Región" value={auctioneerRegion || '-'} />
+            <InfoRow label="Domicilio" value={addressDisplay || '-'} />
+            <InfoRow label="Localidad" value={profile?.localidad || '-'} />
+            <InfoRow label="Ciudad" value={profile?.ciudad || '-'} />
+            <InfoRow label="Estado" value={profile?.estado || '-'} />
+          </>
+        ) : (
+          <>
+            <InfoRow label="País" value={address.country || '-'} />
+            <InfoRow
+              action={
+                <IconButton
+                  accessibilityLabel="Editar domicilio"
+                  onPress={() => setModal('address')}
+                >
+                  <EditIcon />
+                </IconButton>
+              }
+              label="Domicilio"
+              value={addressDisplay || '-'}
+            />
+            <InfoRow
+              action={
+                <IconButton
+                  accessibilityLabel="Editar fotos DNI"
+                  onPress={() => setModal('dni')}
+                >
+                  <UploadSmallIcon />
+                </IconButton>
+              }
+              label="Fotos DNI"
+              value={
+                dniUpdatedAt
+                  ? `Actualizadas: ${String(dniUpdatedAt).slice(0, 10)}`
+                  : 'Sin fecha de actualización'
+              }
+            />
+          </>
+        )}
       </SectionCard>
 
-      <SectionCard
-        headerAction={
-          <IconButton
-            accessibilityLabel="Agregar medio de pago"
-            onPress={() => setModal('payment')}
-          >
-            <AddPaymentIcon />
-          </IconButton>
-        }
-        title="Medios de pago"
-      >
-        <View style={styles.paymentsList}>
-          {payments.length ? (
-            payments.map((payment) => {
-              const presentation = paymentPresentation(payment);
-              return (
-                <View key={payment.identificador} style={styles.paymentRow}>
-                  <PaymentTypeIcon type={presentation.icon} />
-                  <View style={styles.paymentTextBlock}>
-                    <Text style={styles.paymentTitle}>
-                      {presentation.title}
-                    </Text>
-                    {presentation.lines.map((line) => (
-                      <Text
-                        key={line}
-                        numberOfLines={1}
-                        style={styles.paymentLine}
-                      >
-                        {line}
+      {!isAuctioneer ? (
+        <SectionCard
+          headerAction={
+            <IconButton
+              accessibilityLabel="Agregar medio de pago"
+              onPress={() => setModal('payment')}
+            >
+              <AddPaymentIcon />
+            </IconButton>
+          }
+          title="Medios de pago"
+        >
+          <View style={styles.paymentsList}>
+            {payments.length ? (
+              payments.map((payment) => {
+                const presentation = paymentPresentation(payment);
+                const verification = paymentVerificationPresentation(payment);
+                return (
+                  <View key={payment.identificador} style={styles.paymentRow}>
+                    <PaymentTypeIcon type={presentation.icon} />
+                    <View style={styles.paymentTextBlock}>
+                      <Text style={styles.paymentTitle}>
+                        {presentation.title}
                       </Text>
-                    ))}
+                      {presentation.lines.map((line) => (
+                        <Text
+                          key={line}
+                          numberOfLines={1}
+                          style={styles.paymentLine}
+                        >
+                          {line}
+                        </Text>
+                      ))}
+                      <Text
+                        style={[
+                          styles.paymentStatus,
+                          verification.style,
+                        ]}
+                      >
+                        {verification.label}
+                      </Text>
+                    </View>
+                    <View style={styles.paymentActions}>
+                      <IconButton
+                        accessibilityLabel={`Editar ${presentation.title}`}
+                        onPress={() =>
+                          handlePaymentEdit(payment.identificador)
+                        }
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        accessibilityLabel={`Eliminar ${presentation.title}`}
+                        onPress={() =>
+                          handlePaymentDelete(payment.identificador)
+                        }
+                      >
+                        <TrashIcon />
+                      </IconButton>
+                    </View>
                   </View>
-                  <View style={styles.paymentActions}>
-                    <IconButton
-                      accessibilityLabel={`Editar ${presentation.title}`}
-                      onPress={() =>
-                        handlePaymentEdit(payment.identificador)
-                      }
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      accessibilityLabel={`Eliminar ${presentation.title}`}
-                      onPress={() =>
-                        handlePaymentDelete(payment.identificador)
-                      }
-                    >
-                      <TrashIcon />
-                    </IconButton>
-                  </View>
-                </View>
-              );
-            })
-          ) : (
-            <Text style={styles.emptyPayments}>
-              Todavía no agregaste medios de pago.
-            </Text>
-          )}
-        </View>
-        <Text style={styles.paymentHint}>
-          Necesitás al menos un medio de pago para poder pujar.
-        </Text>
-      </SectionCard>
+                );
+              })
+            ) : (
+              <Text style={styles.emptyPayments}>
+                Todavía no agregaste medios de pago.
+              </Text>
+            )}
+          </View>
+          <Text style={styles.paymentHint}>
+            Necesitás al menos un medio de pago para poder pujar.
+          </Text>
+        </SectionCard>
+      ) : null}
 
       <Pressable
         accessibilityRole="button"
@@ -1334,24 +1450,28 @@ export default function ProfileScreen({ onLogout }) {
         <LogoutIcon />
       </Pressable>
 
-      <AddressEditModal
-        address={address}
-        apiError={pageError}
-        countries={countries}
-        onClose={closeModal}
-        onSave={handleAddressSave}
-        saving={savingSection === 'address'}
-        visible={modal === 'address'}
-      />
-      <DniEditModal
-        apiError={pageError}
-        files={dniFiles}
-        onClose={closeModal}
-        onSave={handleDniSave}
-        saving={savingSection === 'dni'}
-        visible={modal === 'dni'}
-      />
-      {modal === 'payment' ? (
+      {!isAuctioneer ? (
+        <>
+          <AddressEditModal
+            address={address}
+            apiError={pageError}
+            countries={countries}
+            onClose={closeModal}
+            onSave={handleAddressSave}
+            saving={savingSection === 'address'}
+            visible={modal === 'address'}
+          />
+          <DniEditModal
+            apiError={pageError}
+            files={dniFiles}
+            onClose={closeModal}
+            onSave={handleDniSave}
+            saving={savingSection === 'dni'}
+            visible={modal === 'dni'}
+          />
+        </>
+      ) : null}
+      {!isAuctioneer && modal === 'payment' ? (
         <PaymentEditModal
           initialPayment={editingPayment}
           onClose={closeModal}
@@ -1626,6 +1746,28 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 14,
     lineHeight: 18,
+  },
+  paymentStatus: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    fontFamily: fonts.semiBold,
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  paymentStatusVerified: {
+    backgroundColor: 'rgba(77, 156, 69, 0.16)',
+    color: '#397F31',
+  },
+  paymentStatusPending: {
+    backgroundColor: 'rgba(232, 177, 50, 0.18)',
+    color: '#8A620D',
+  },
+  paymentStatusRejected: {
+    backgroundColor: 'rgba(95, 95, 95, 0.14)',
+    color: '#5F5F5F',
   },
   paymentActions: {
     alignItems: 'center',

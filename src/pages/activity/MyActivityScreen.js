@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import AddressMapPreview from '../../components/forms/address/AddressMapPreview';
 import { listPaymentMethods } from '../../services/paymentMethodsApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl } from '../../utils/config';
-import { apiFetch } from '../../utils/http';
+import { apiFetch, getApiErrorMessage } from '../../utils/http';
 
 const tabs = ['Subastas', 'Compras', 'Pujas', 'Multas', 'Metricas'];
 const tabLabels = {
@@ -18,143 +18,190 @@ const tabLabels = {
   Subastas: 'Subastas en las que participaste',
 };
 
-const auctionRows = [
-  {
-    category: 'Oro',
-    date: '20/04/2026 · 20:00h',
-    description: 'Subasta especial de piezas gothic lolita, accesorios oscuros y prendas de coleccion usadas en excelente estado.',
-    image: require('../../assets/activity/gothic-night.png'),
-    location: 'Palacio San Miguel, CABA',
-    minimumBid: '$18.000',
-    organizer: 'Tesoro EGL',
-    pieces: '2 PIEZAS',
-    registration: 'Inscripcion abierta hasta 20/04/2026 · 18:00h',
-    status: 'en curso',
-    title: 'Gothic Night',
-  },
-  {
-    category: 'Plata',
-    date: '20/04/2026 · 17:00h',
-    description: 'Lotes sweet lolita con vestidos, accesorios pastel y piezas delicadas de coleccion usada.',
-    image: require('../../assets/activity/sweet-dreams.png'),
-    location: 'Centro Cultural Recoleta, CABA',
-    minimumBid: '$12.500',
-    organizer: 'Atelier Sweet Rose',
-    pieces: '5 PIEZAS',
-    registration: 'Inscripcion abierta hasta 20/04/2026 · 15:00h',
-    status: 'en curso',
-    title: 'Sweet Dreams',
-  },
-  {
-    category: 'Especial',
-    date: '20/04/2026 · 21:00h',
-    description: 'Subasta Y2K con conjuntos, accesorios brillantes y prendas gyaru seleccionadas.',
-    image: require('../../assets/activity/y2k-reloaded.png'),
-    location: 'Complejo C Art Media, CABA',
-    minimumBid: '$15.200',
-    organizer: 'Y2K Archive BA',
-    pieces: '8 PIEZAS',
-    registration: 'Finalizada el 20/04/2026 · 21:45h',
-    status: 'finalizada',
-    title: 'Y2K Reloaded',
-  },
-];
+function formatAmount(value, moneda = 'ARS') {
+  if (value == null) return '-';
+  const formatted = Number(value).toLocaleString('es-AR', { maximumFractionDigits: 0 });
+  return moneda === 'USD' ? `U$S ${formatted}` : `$${formatted}`;
+}
 
-const purchaseRows = [
-  {
-    action: 'Ver detalle',
-    amount: '$32.000',
-    auction: 'Sweet Dreams',
-    date: '30/08/2026',
-    details: {
-      condition: 'Excelente estado, sin manchas ni roturas visibles.',
-      lot: 'Lote 08',
-      material: 'Algodon bordado con puntilla importada',
-      seller: 'Atelier Sweet Rose',
-      size: 'Talle M ajustable',
-    },
-    id: 'sweet-lolita-dress',
-    image: require('../../assets/activity/sweet-lolita-dress.webp'),
-    status: 'entregado',
-    title: 'Vestido Sweet Lolita Lace Dress',
-  },
-  {
-    action: 'Retirar personalmente',
-    amount: '$21.300',
-    auction: 'Y2K Reloaded',
-    date: '08/09/2026',
-    details: {
-      condition: 'Usado en excelente estado, cierre funcionando.',
-      lot: 'Lote 14',
-      material: 'Poliester satinado con detalles dorados',
-      seller: 'Y2K Archive BA',
-      size: 'Talle S',
-    },
-    id: 'y2k-club-set',
-    image: require('../../assets/activity/y2k-club-set.png'),
-    pickup: {
-      country: 'Argentina',
-      latitude: -34.5896,
-      locality: 'Recoleta',
-      longitude: -58.3937,
-      number: '1930',
-      postalCode: 'C1128',
-      province: 'Ciudad Autonoma de Buenos Aires',
-      street: 'Av. Pueyrredon',
-    },
-    pickupAddress: 'Av. Pueyrredon 1930, Recoleta, CABA',
-    pickupWindow: 'del 16/09/2026 al 20/09/2026, de 11:00h a 18:00h',
-    status: 'pendiente de retiro',
-    title: 'Conjunto Y2K Club Set',
-  },
-];
+function formatDateTime(isoString) {
+  if (!isoString) return '-';
+  const d = new Date(isoString);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${day}/${month}/${d.getFullYear()} · ${hours}:${minutes}h`;
+}
 
-const bidRows = [
-  {
-    amount: '$32.000',
-    auction: 'Sweet Dreams',
-    date: '30/08/2026 · 17:10h',
-    image: require('../../assets/activity/sweet-lolita-dress.webp'),
-    result: 'Ganadora',
-    resultTone: 'success',
-    title: 'Vestido Sweet Lolita Lace Dress',
-  },
-  {
-    amount: '$15.200',
-    auction: 'Y2K Reloaded',
-    date: '28/08/2026 · 22:30h',
-    image: require('../../assets/activity/leopard-skirt.jpg'),
-    result: 'Superada',
-    resultTone: 'danger',
-    title: 'Mini skirt Leopard Y2K Set',
-  },
-];
+function formatDateOnly(isoString) {
+  if (!isoString) return '-';
+  const parts = String(isoString).split('T')[0].split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return isoString;
+}
 
-const penaltyRows = [
-  {
-    amount: '$18.000',
-    auction: 'Fairy Magic',
-    date: '05/04/2026 · 16:30h',
-    image: require('../../assets/activity/paw-top.jpg'),
-    penalty: '$1.800',
-    status: 'pendiente',
-  },
-  {
-    amount: '$24.500',
-    auction: 'Gyaru Deluxe',
-    date: '28/08/2026 · 18:30h',
-    image: require('../../assets/activity/fairy-skirt.jpg'),
-    penalty: '$2.450',
-    status: 'pagada',
-  },
-];
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function mapEstadoSubasta(estado) {
+  if (estado === 'programada') return 'inscripción abierta';
+  if (estado === 'abierta') return 'en curso';
+  return 'finalizada';
+}
+
+function buildMonthlyBids(pujas) {
+  const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const result = {};
+  (pujas || []).forEach((puja) => {
+    if (!puja.realizadaEn) return;
+    const d = new Date(puja.realizadaEn);
+    const year = String(d.getFullYear());
+    if (!result[year]) result[year] = MONTHS.map((label) => ({ label, value: 0 }));
+    result[year][d.getMonth()].value += 1;
+  });
+  return result;
+}
+
+function getResponseItems(response) {
+  if (Array.isArray(response?.datos)) return response.datos;
+  if (Array.isArray(response)) return response;
+  return [];
+}
+
+function isTruthyFlag(value) {
+  if (typeof value === 'boolean') return value;
+  if (value == null) return false;
+  return ['si', 'true', '1'].includes(String(value).trim().toLowerCase());
+}
+
+function mapSubasta(s) {
+  const hora = s.hora ? ` · ${String(s.hora).slice(0, 5)}h` : '';
+  return {
+    identificador: s.identificador,
+    title: s.nombre || `Subasta #${s.identificador}`,
+    image: s.fotoPrincipal ? { uri: resolveApiAssetUrl(s.fotoPrincipal) } : null,
+    date: s.fecha ? `${formatDateOnly(s.fecha)}${hora}` : '-',
+    location: s.ubicacion || '-',
+    category: capitalize(s.categoria),
+    status: mapEstadoSubasta(s.estado),
+    description: s.descripcion || '',
+    organizer: '',
+    pieces: s.cantidadItems != null ? `${s.cantidadItems} PIEZAS` : '',
+    minimumBid: '',
+    registration: '',
+  };
+}
+
+function mapPuja(p) {
+  return {
+    title: p.producto?.descripcionCatalogo || `Ítem #${p.idItem}`,
+    image: p.producto?.fotoPrincipal ? { uri: resolveApiAssetUrl(p.producto.fotoPrincipal) } : null,
+    auction: p.subasta?.nombre || `Subasta #${p.idItem}`,
+    date: formatDateTime(p.realizadaEn),
+    amount: formatAmount(p.importe, p.subasta?.moneda),
+    result: p.ganador === 'si' ? 'Ganadora' : 'Superada',
+    resultTone: p.ganador === 'si' ? 'success' : 'danger',
+  };
+}
+
+function mapCompra(r) {
+  const importe = Number(r.importe || 0);
+  const comision = Number(r.comision || 0);
+  const costoEnvio = Number(r.costoEnvio || 0);
+  const retiraPersonalmente = isTruthyFlag(r.retiraPersonalmente);
+  const pagado = isTruthyFlag(r.pagado);
+  const total = importe + comision + (retiraPersonalmente ? 0 : costoEnvio);
+  const producto = r.detallesProducto || r.producto || {};
+  const fotoProducto =
+    r.fotoProducto ||
+    producto.fotoPrincipal ||
+    (Array.isArray(producto.fotos) ? producto.fotos[0] : null);
+  const fechaCompra = r.fechaRegistro || r.fechaPago;
+  const fechaBase = fechaCompra ? new Date(fechaCompra) : new Date();
+  const fechaVencimiento = r.fechaVencimiento
+    ? new Date(r.fechaVencimiento)
+    : new Date(fechaBase.getTime() + 2 * 24 * 60 * 60 * 1000);
+  const title =
+    producto.nombre && producto.descripcionCatalogo
+      ? `${producto.nombre} - ${producto.descripcionCatalogo}`
+      : producto.nombre ||
+        producto.descripcionCatalogo ||
+        r.descripcionProducto ||
+        `Compra #${r.identificador}`;
+  const medioPago = r.medioPago || r.paymentMethod || null;
+
+  return {
+    id: String(r.identificador),
+    identificador: r.identificador,
+    code: producto.codigo || r.codigoProducto || `SUB-${r.identificador}`,
+    title,
+    image: fotoProducto
+      ? { uri: resolveApiAssetUrl(fotoProducto) }
+      : require('../../assets/activity/sweet-lolita-dress.webp'),
+    auction: r.nombreSubasta || r.subasta?.nombre || `Subasta #${r.idSubasta || r.subasta || r.identificador}`,
+    date: fechaCompra ? formatDateOnly(fechaCompra) : '-',
+    amount: formatAmount(total, r.moneda),
+    baseAmount: formatAmount(importe, r.moneda),
+    commission: comision,
+    commissionLabel: formatAmount(comision, r.moneda),
+    shippingCost: formatAmount(costoEnvio, r.moneda),
+    finalPrice: importe,
+    shipping: retiraPersonalmente ? 0 : costoEnvio,
+    currency: r.moneda || 'USD',
+    status: pagado ? 'pagado' : 'pendiente',
+    auctionDate: fechaCompra ? formatDateOnly(fechaCompra) : '-',
+    dueDate: Number.isNaN(fechaVencimiento.getTime())
+      ? '-'
+      : formatDateOnly(fechaVencimiento.toISOString()),
+    fineAmount:
+      r.importeMulta != null || r.montoMulta != null
+        ? formatAmount(r.importeMulta ?? r.montoMulta, r.moneda)
+        : '$300 USD',
+    paidDate: pagado && r.fechaPago ? formatDateOnly(r.fechaPago) : null,
+    paymentMethod: pagado
+      ? {
+          brand: medioPago?.detalle?.red || medioPago?.brand || 'Visa',
+          last4:
+            medioPago?.detalle?.ultimosCuatroDigitos ||
+            medioPago?.last4 ||
+            '4367',
+          cardholder:
+            medioPago?.detalle?.titular ||
+            medioPago?.detalle?.nombreTitular ||
+            medioPago?.cardholder ||
+            'Juana Mendez',
+        }
+      : null,
+    retiraPersonalmente,
+    pickup: r.direccionRetiro || null,
+    pickupAddress: r.direccionRetiroTexto || null,
+    pickupWindow: r.ventanaRetiro || null,
+    details: r.detalles || null,
+  };
+}
+
+function mapMulta(m) {
+  return {
+    id: m.identificador,
+    identificador: m.identificador,
+    image: null,
+    auction: m.nombreSubasta || `Registro #${m.idRegistroSubasta}`,
+    date: formatDateTime(m.fechaEmision),
+    amount: m.montoOfertado != null ? formatAmount(m.montoOfertado, m.moneda) : '-',
+    penalty: formatAmount(m.importe),
+    status: m.pagada === 'si' ? 'pagada' : 'pendiente',
+  };
+}
 
 function StatusPill({ label, style }) {
   const normalizedLabel = label.toLowerCase();
   const tone =
-    normalizedLabel.includes('finalizada')
+    normalizedLabel.includes('finalizada') || normalizedLabel.includes('superada')
       ? 'danger'
-      : normalizedLabel.includes('pendiente')
+      : normalizedLabel.includes('pendiente') || normalizedLabel.includes('abierta')
       ? 'warning'
       : 'success';
 
@@ -168,16 +215,8 @@ function StatusPill({ label, style }) {
 function WarningIcon() {
   return (
     <Svg width={23} height={23} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M12 4L21 20H3L12 4Z"
-        fill={colors.burgundy}
-      />
-      <Path
-        d="M12 9V14M12 17H12.01"
-        stroke={colors.cream}
-        strokeLinecap="round"
-        strokeWidth={2.2}
-      />
+      <Path d="M12 4L21 20H3L12 4Z" fill={colors.burgundy} />
+      <Path d="M12 9V14M12 17H12.01" stroke={colors.cream} strokeLinecap="round" strokeWidth={2.2} />
     </Svg>
   );
 }
@@ -186,12 +225,7 @@ function InfoIcon() {
   return (
     <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
       <Circle cx={12} cy={12} r={10} fill={colors.burgundy} />
-      <Path
-        d="M12 10.8V17M12 7.2H12.01"
-        stroke={colors.cream}
-        strokeLinecap="round"
-        strokeWidth={2.1}
-      />
+      <Path d="M12 10.8V17M12 7.2H12.01" stroke={colors.cream} strokeLinecap="round" strokeWidth={2.1} />
     </Svg>
   );
 }
@@ -199,13 +233,7 @@ function InfoIcon() {
 function ChevronIcon() {
   return (
     <Svg width={23} height={23} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M6 9L12 15L18 9"
-        stroke={colors.cream}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={3}
-      />
+      <Path d="M6 9L12 15L18 9" stroke={colors.cream} strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} />
     </Svg>
   );
 }
@@ -233,16 +261,47 @@ function ErrorSectionTitle({ children }) {
   );
 }
 
+function LoadingState() {
+  return (
+    <View style={styles.centerState}>
+      <ActivityIndicator color={colors.burgundy} size="large" />
+    </View>
+  );
+}
+
+function ErrorState({ message, onRetry }) {
+  return (
+    <View style={styles.centerState}>
+      <Text style={styles.stateText}>{message}</Text>
+      <Pressable onPress={onRetry} style={styles.retryButton}>
+        <Text style={styles.retryButtonText}>Reintentar</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function EmptyState({ message }) {
+  return (
+    <View style={styles.centerState}>
+      <Text style={styles.stateText}>{message || 'No hay datos para mostrar.'}</Text>
+    </View>
+  );
+}
+
 function AuctionRow({ item, onPress }) {
   return (
     <View style={styles.auctionRow}>
       <Pressable onPress={onPress} style={styles.auctionTouchable}>
-        <Image source={item.image} resizeMode="cover" style={styles.auctionImage} />
+        {item.image ? (
+          <Image source={item.image} resizeMode="cover" style={styles.auctionImage} />
+        ) : null}
         <View style={styles.rowBody}>
           <Text numberOfLines={1} style={styles.rowTitle}>{item.title}</Text>
           <Text style={styles.rowText}>{item.date}</Text>
           <Text numberOfLines={1} style={styles.rowText}>{item.location}</Text>
-          <Text style={styles.rowText}>{item.pieces} · Categoria: {item.category}</Text>
+          {item.pieces ? <Text style={styles.rowText}>{item.pieces} · Categoria: {item.category}</Text> : (
+            <Text style={styles.rowText}>Categoria: {item.category}</Text>
+          )}
         </View>
       </Pressable>
       <StatusPill label={item.status} style={styles.rowStatusBottom} />
@@ -250,94 +309,9 @@ function AuctionRow({ item, onPress }) {
   );
 }
 
-function PurchaseRow({
-  isPickupConfirmed,
-  item,
-  onRequestPickup,
-  onShowDetail,
-  onShowPickupLocation,
-}) {
-  const isPickupAction = item.action === 'Retirar personalmente';
-
-  return (
-    <View style={styles.purchaseRow}>
-      <View style={styles.purchaseTopRow}>
-        <Image source={item.image} resizeMode="cover" style={styles.productImage} />
-        <View style={styles.purchaseBody}>
-          <Text numberOfLines={2} style={styles.rowTitle}>{item.title}</Text>
-          <Text style={styles.rowText}>Ganaste el {item.date}</Text>
-          <Text style={styles.rowText}>en la subasta {item.auction}</Text>
-          <Text style={styles.rowBold}>Total pagado: {item.amount}</Text>
-        </View>
-      </View>
-      <View style={styles.purchaseActions}>
-        {isPickupAction && isPickupConfirmed ? (
-          <>
-            <StatusPill label="retira personalmente" style={styles.pickupConfirmedStatus} />
-            <Pressable
-              onPress={onShowPickupLocation}
-              style={[styles.outlineButton, styles.purchaseActionButton]}
-            >
-              <Text style={styles.outlineButtonText}>Ubicacion</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Pressable
-              onPress={isPickupAction ? onRequestPickup : onShowDetail}
-              style={[styles.outlineButton, styles.purchaseActionButton]}
-            >
-              <Text style={styles.outlineButtonText}>{item.action}</Text>
-            </Pressable>
-            <StatusPill label={item.status} style={styles.purchaseStatus} />
-          </>
-        )}
-      </View>
-    </View>
-  );
-}
-
 const DEFAULT_PAYMENT_METHODS = [
   { id: '1', brand: 'Visa', last4: '4367', expiry: '09/27', cardholder: 'Juana Mendez' },
   { id: '2', brand: 'Mastercard', last4: '2398', expiry: '12/28', cardholder: 'Juana Mendez' },
-];
-
-const INITIAL_WON_AUCTIONS = [
-  {
-    id: 'subasta-ganada-1',
-    code: 'PUIFT-017-BLACK&PINK-FREESIZE',
-    title: 'Clearance - Black & Pink Polka-dot Pattern Bowknot Gyaru Fashion Beret',
-    image: require('../../assets/activity/paw-top.jpg'),
-    finalPrice: 140,
-    shipping: 0,
-    commission: 20,
-    currency: 'USD',
-    status: 'pendiente',
-    auctionDate: '13/05/2026',
-    dueDate: '15/05/2026',
-    fineAmount: '$300 USD',
-    paidDate: null,
-    paymentMethod: null,
-  },
-  {
-    id: 'subasta-ganada-2',
-    code: 'M-O-073',
-    title: 'Red Butterfly Jacquard Fabric Black Collar and Ruffle Hem Lolita Dress',
-    image: require('../../assets/activity/sweet-lolita-dress.webp'),
-    finalPrice: 140,
-    shipping: 0,
-    commission: 20,
-    currency: 'USD',
-    status: 'pagado',
-    auctionDate: '12/04/2026',
-    dueDate: '14/04/2026',
-    paidDate: '14/04/2026',
-    paymentMethod: {
-      brand: 'Visa',
-      last4: '4367',
-      cardholder: 'Juana Mendez',
-    },
-  },
 ];
 
 function formatPaymentExpiration(value) {
@@ -360,9 +334,12 @@ function formatNumberWithDots(value) {
 
 function WonAuctionCard({
   item,
+  onRequestPickup,
   paymentMethods = [],
   selectedPaymentId,
   onSelectPayment,
+  onShowDetail,
+  onShowPickupLocation,
   onPay,
 }) {
   const isPending = item.status === 'pendiente';
@@ -454,7 +431,7 @@ function WonAuctionCard({
                         {isSelected ? <View style={styles.wonRadioDot} /> : null}
                       </View>
                       <Text style={styles.wonPaymentText}>
-                        {pm.brand || 'Visa'} •••• {pm.last4 || '4367'}
+                        {pm.brand || 'Visa'} â€¢â€¢â€¢â€¢ {pm.last4 || '4367'}
                       </Text>
                     </View>
                     <Text style={styles.wonPaymentExpiry}>
@@ -499,7 +476,7 @@ function WonAuctionCard({
             </View>
             <View>
               <Text style={styles.wonPaidMethodTitle}>
-                •••• {item.paymentMethod?.last4 || '4367'}
+                â€¢â€¢â€¢â€¢ {item.paymentMethod?.last4 || '4367'}
               </Text>
               <Text style={styles.wonPaidMethodSubtitle}>
                 {item.paymentMethod?.cardholder || 'Juana Mendez'}
@@ -512,6 +489,27 @@ function WonAuctionCard({
           </Text>
         </>
       )}
+      <View style={styles.wonPurchaseActions}>
+        {item.details ? (
+          <Pressable onPress={onShowDetail} style={[styles.outlineButton, styles.purchaseActionButton]}>
+            <Text style={styles.outlineButtonText}>Ver detalle</Text>
+          </Pressable>
+        ) : null}
+        {item.retiraPersonalmente ? (
+          <>
+            <StatusPill label="retira personalmente" style={styles.pickupConfirmedStatus} />
+            {item.pickup ? (
+              <Pressable onPress={onShowPickupLocation} style={[styles.outlineButton, styles.purchaseActionButton]}>
+                <Text style={styles.outlineButtonText}>Ubicacion</Text>
+              </Pressable>
+            ) : null}
+          </>
+        ) : (
+          <Pressable onPress={onRequestPickup} style={[styles.outlineButton, styles.purchaseActionButton]}>
+            <Text style={styles.outlineButtonText}>Retirar personalmente</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -519,7 +517,9 @@ function WonAuctionCard({
 function BidRow({ item }) {
   return (
     <View style={styles.bidRow}>
-      <Image source={item.image} resizeMode="cover" style={styles.productImage} />
+      {item.image ? (
+        <Image source={item.image} resizeMode="cover" style={styles.productImage} />
+      ) : null}
       <View style={styles.bidBody}>
         <Text numberOfLines={2} style={styles.rowTitle}>{item.title}</Text>
         <Text style={styles.rowText}>{item.auction}</Text>
@@ -539,20 +539,21 @@ function PenaltyRow({ item, onPayPenalty }) {
   return (
     <View style={styles.penaltyRow}>
       <View style={styles.purchaseTopRow}>
-        <Image source={item.image} resizeMode="cover" style={styles.productImage} />
+        {item.image ? (
+          <Image source={item.image} resizeMode="cover" style={styles.productImage} />
+        ) : null}
         <View style={styles.penaltyBody}>
           <Text numberOfLines={2} style={styles.rowTitle}>{item.auction}</Text>
           <Text style={styles.rowText}>Fecha: {item.date}</Text>
-          <Text style={styles.rowText}>Monto ofertado: {item.amount}</Text>
+          {item.amount !== '-' ? (
+            <Text style={styles.rowText}>Monto ofertado: {item.amount}</Text>
+          ) : null}
           <Text style={styles.rowBold}>Multa aplicada (10%): {item.penalty}</Text>
         </View>
       </View>
       <View style={styles.purchaseActions}>
         {item.status === 'pendiente' ? (
-          <Pressable
-            onPress={onPayPenalty}
-            style={[styles.outlineButton, styles.purchaseActionButton]}
-          >
+          <Pressable onPress={() => onPayPenalty(item)} style={[styles.outlineButton, styles.purchaseActionButton]}>
             <Text style={styles.outlineButtonText}>Pagar multa</Text>
           </Pressable>
         ) : null}
@@ -583,7 +584,7 @@ function ActivitySelect({ activeTab, onChange }) {
     <View style={styles.selectContainer}>
       <Pressable
         accessibilityRole="button"
-        onPress={() => setIsOpen((currentValue) => !currentValue)}
+        onPress={() => setIsOpen((v) => !v)}
         style={styles.selectTrigger}
       >
         <View>
@@ -597,22 +598,13 @@ function ActivitySelect({ activeTab, onChange }) {
         <View style={styles.selectMenu}>
           {tabs.map((tab) => {
             const isSelected = tab === activeTab;
-
             return (
               <Pressable
                 key={tab}
                 onPress={() => handleSelect(tab)}
-                style={[
-                  styles.selectOption,
-                  isSelected ? styles.selectOptionActive : null,
-                ]}
+                style={[styles.selectOption, isSelected ? styles.selectOptionActive : null]}
               >
-                <Text
-                  style={[
-                    styles.selectOptionText,
-                    isSelected ? styles.selectOptionTextActive : null,
-                  ]}
-                >
+                <Text style={[styles.selectOptionText, isSelected ? styles.selectOptionTextActive : null]}>
                   {tabLabels[tab]}
                 </Text>
               </Pressable>
@@ -623,55 +615,6 @@ function ActivitySelect({ activeTab, onChange }) {
     </View>
   );
 }
-
-const dashboardStats = [
-  { label: 'Participaste', value: '12', helper: 'subastas' },
-  { label: 'Pujas realizadas', value: '28', helper: 'ofertas' },
-  { label: 'Ganadas', value: '4', helper: 'subastas' },
-  { label: 'Pagado', value: '$120k', helper: 'total' },
-];
-
-const categoryMetrics = [
-  { category: 'Comun', participated: 5, won: 2 },
-  { category: 'Especial', participated: 3, won: 1 },
-  { category: 'Plata', participated: 2, won: 1 },
-  { category: 'Oro', participated: 1, won: 0 },
-  { category: 'Platino', participated: 1, won: 0 },
-];
-
-const monthlyBidHistory = {
-  2026: [
-    { label: 'Ene', value: 1 },
-    { label: 'Feb', value: 0 },
-    { label: 'Mar', value: 2 },
-    { label: 'Abr', value: 6 },
-    { label: 'May', value: 4 },
-    { label: 'Jun', value: 3 },
-    { label: 'Jul', value: 4 },
-    { label: 'Ago', value: 5 },
-    { label: 'Sep', value: 2 },
-    { label: 'Oct', value: 1 },
-    { label: 'Nov', value: 0 },
-    { label: 'Dic', value: 0 },
-  ],
-  2025: [
-    { label: 'Ene', value: 0 },
-    { label: 'Feb', value: 1 },
-    { label: 'Mar', value: 3 },
-    { label: 'Abr', value: 2 },
-    { label: 'May', value: 0 },
-    { label: 'Jun', value: 1 },
-    { label: 'Jul', value: 4 },
-    { label: 'Ago', value: 2 },
-    { label: 'Sep', value: 3 },
-    { label: 'Oct', value: 1 },
-    { label: 'Nov', value: 1 },
-    { label: 'Dic', value: 0 },
-  ],
-};
-const metricYears = Object.keys(monthlyBidHistory).sort((firstYear, secondYear) =>
-  Number(secondYear) - Number(firstYear)
-);
 
 function DashboardStat({ helper, label, value }) {
   return (
@@ -685,23 +628,19 @@ function DashboardStat({ helper, label, value }) {
 
 function MiniProgress({ color = colors.burgundy, value }) {
   const normalizedValue = Math.max(0, Math.min(value, 100));
-
   return (
     <View style={styles.progressTrack}>
       <View
         style={[
           styles.progressFill,
-          {
-            backgroundColor: color,
-            width: normalizedValue > 0 ? `${Math.max(7, normalizedValue)}%` : '0%',
-          },
+          { backgroundColor: color, width: normalizedValue > 0 ? `${Math.max(7, normalizedValue)}%` : '0%' },
         ]}
       />
     </View>
   );
 }
 
-function DonutChart({ value }) {
+function DonutChart({ value, wonPercent }) {
   const size = 118;
   const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
@@ -711,14 +650,7 @@ function DonutChart({ value }) {
   return (
     <View style={styles.donutWrap}>
       <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          fill="none"
-          r={radius}
-          stroke="rgba(138, 74, 58, 0.16)"
-          strokeWidth={strokeWidth}
-        />
+        <Circle cx={size / 2} cy={size / 2} fill="none" r={radius} stroke="rgba(138, 74, 58, 0.16)" strokeWidth={strokeWidth} />
         <Circle
           cx={size / 2}
           cy={size / 2}
@@ -732,14 +664,14 @@ function DonutChart({ value }) {
         />
       </Svg>
       <View style={styles.donutCenter}>
-        <Text style={styles.donutValue}>33%</Text>
+        <Text style={styles.donutValue}>{wonPercent}%</Text>
         <Text style={styles.donutLabel}>ganadas</Text>
       </View>
     </View>
   );
 }
 
-function YearSelect({ onChange, selectedYear }) {
+function YearSelect({ onChange, selectedYear, years }) {
   const [isOpen, setIsOpen] = useState(false);
 
   function handleSelect(year) {
@@ -751,7 +683,7 @@ function YearSelect({ onChange, selectedYear }) {
     <View style={styles.yearSelectContainer}>
       <Pressable
         accessibilityRole="button"
-        onPress={() => setIsOpen((currentValue) => !currentValue)}
+        onPress={() => setIsOpen((v) => !v)}
         style={styles.yearSelectTrigger}
       >
         <Text style={styles.yearSelectValue}>Año {selectedYear}</Text>
@@ -760,24 +692,15 @@ function YearSelect({ onChange, selectedYear }) {
 
       {isOpen ? (
         <View style={styles.yearSelectMenu}>
-          {metricYears.map((year) => {
+          {years.map((year) => {
             const isSelected = year === selectedYear;
-
             return (
               <Pressable
                 key={year}
                 onPress={() => handleSelect(year)}
-                style={[
-                  styles.yearSelectOption,
-                  isSelected ? styles.yearSelectOptionActive : null,
-                ]}
+                style={[styles.yearSelectOption, isSelected ? styles.yearSelectOptionActive : null]}
               >
-                <Text
-                  style={[
-                    styles.yearSelectOptionText,
-                    isSelected ? styles.yearSelectOptionTextActive : null,
-                  ]}
-                >
+                <Text style={[styles.yearSelectOptionText, isSelected ? styles.yearSelectOptionTextActive : null]}>
                   {year}
                 </Text>
               </Pressable>
@@ -789,28 +712,21 @@ function YearSelect({ onChange, selectedYear }) {
   );
 }
 
-function MonthlyBars({ selectedYear }) {
-  const monthlyBids = monthlyBidHistory[selectedYear] || [];
+function MonthlyBars({ data }) {
+  const monthlyBids = data || [];
   const maxValue = Math.max(1, ...monthlyBids.map((item) => item.value));
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.barScroll}
-      contentContainerStyle={styles.barChart}
-    >
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.barScroll} contentContainerStyle={styles.barChart}>
       {monthlyBids.map((item) => {
         const height = item.value > 0 ? Math.max(18, (item.value / maxValue) * 96) : 0;
-
         return (
-          <View key={`${selectedYear}-${item.label}`} style={styles.barColumn}>
+          <View key={item.label} style={styles.barColumn}>
             <View style={styles.barSlot}>
               {height > 0 ? <View style={[styles.barFill, { height }]} /> : null}
             </View>
             <Text style={styles.barValue}>{item.value}</Text>
             <Text style={styles.barLabel}>{item.label}</Text>
-            <Text style={styles.barYear}>{selectedYear}</Text>
           </View>
         );
       })}
@@ -818,34 +734,70 @@ function MonthlyBars({ selectedYear }) {
   );
 }
 
-function MetricsContent() {
-  const [selectedYear, setSelectedYear] = useState(metricYears[0]);
+function MetricsContent({ metricas, monthlyBidHistory }) {
+  const metricYears = Object.keys(monthlyBidHistory).sort((a, b) => Number(b) - Number(a));
+  const [selectedYear, setSelectedYear] = useState(() => metricYears[0] || String(new Date().getFullYear()));
+
+  const totalParticipated =
+  metricas?.totalSubastasParticipadas ??
+  metricas?.totalCompras ??
+  0;
+
+  const totalGanadas =
+    metricas?.totalGanadas ??
+    metricas?.pujasGanadas ??
+    0;
+
+  const totalPujas =
+    metricas?.totalPujasRealizadas ??
+    metricas?.totalPujas ??
+    0;
+
+  const totalPagado =
+    metricas?.totalImportePagado ??
+    0;
+
+  const totalPujado =
+    metricas?.totalImportePujado ??
+    0;
+
+  const wonRatio = totalParticipated > 0 ? totalGanadas / totalParticipated : 0;
+  const wonPercent = Math.round(wonRatio * 100);
+  const paidRatio = totalPujado > 0 ? (totalPagado / totalPujado) * 100 : 0;
+
+  const dashboardStats = [
+    { label: 'Participaste', value: String(totalParticipated), helper: 'subastas' },
+    { label: 'Pujas realizadas', value: String(totalPujas), helper: 'ofertas' },
+    { label: 'Ganadas', value: String(totalGanadas), helper: 'subastas' },
+    { label: 'Pagado', value: formatAmount(totalPagado), helper: 'total' },
+  ];
+
+  const categoryMetrics = (metricas?.porCategoria || []).map((item) => ({
+    category: capitalize(item.categoria),
+    participated: item.participaciones,
+    won: item.ganadas,
+  }));
 
   return (
     <>
       <View style={styles.statsGrid}>
         {dashboardStats.map((item) => (
-          <DashboardStat
-            helper={item.helper}
-            key={item.label}
-            label={item.label}
-            value={item.value}
-          />
+          <DashboardStat helper={item.helper} key={item.label} label={item.label} value={item.value} />
         ))}
       </View>
 
       <ActivityCard title="Resumen de actividad">
         <View style={styles.dashboardRow}>
-          <DonutChart value={4 / 12} />
+          <DonutChart value={wonRatio} wonPercent={wonPercent} />
           <View style={styles.dashboardCopy}>
             <Text style={styles.metricLine}>
-              <Text style={styles.metricStrong}>Participaste en:</Text> 12
+              <Text style={styles.metricStrong}>Participaste en:</Text> {totalParticipated}
             </Text>
             <Text style={styles.metricLine}>
-              <Text style={styles.metricStrong}>Pujas realizadas:</Text> 28
+              <Text style={styles.metricStrong}>Pujas realizadas:</Text> {totalPujas}
             </Text>
             <Text style={styles.metricLine}>
-              <Text style={styles.metricStrong}>Subastas ganadas:</Text> 4
+              <Text style={styles.metricStrong}>Subastas ganadas:</Text> {totalGanadas}
             </Text>
           </View>
         </View>
@@ -854,50 +806,48 @@ function MetricsContent() {
       <ActivityCard title="Montos">
         <View style={styles.amountRow}>
           <Text style={styles.amountLabel}>Total ofertado</Text>
-          <Text style={styles.amountValue}>$185.000</Text>
+          <Text style={styles.amountValue}>{formatAmount(totalPujado)}</Text>
         </View>
         <MiniProgress value={100} />
         <View style={styles.amountRow}>
           <Text style={styles.amountLabel}>Total pagado</Text>
-          <Text style={styles.amountValue}>$120.000</Text>
+          <Text style={styles.amountValue}>{formatAmount(totalPagado)}</Text>
         </View>
-        <MiniProgress color={colors.blush} value={65} />
+        <MiniProgress color={colors.blush} value={paidRatio} />
       </ActivityCard>
 
-      <ActivityCard title="Pujas por mes">
-        <YearSelect selectedYear={selectedYear} onChange={setSelectedYear} />
-        <MonthlyBars selectedYear={selectedYear} />
-      </ActivityCard>
+      {metricYears.length > 0 ? (
+        <ActivityCard title="Pujas por mes">
+          <YearSelect selectedYear={selectedYear} onChange={setSelectedYear} years={metricYears} />
+          <MonthlyBars data={monthlyBidHistory[selectedYear] || []} />
+        </ActivityCard>
+      ) : null}
 
-      <ActivityCard title="Por categoria" style={styles.categoryCard}>
-        {categoryMetrics.map((item) => {
-          const value = item.participated > 0 ? (item.won / item.participated) * 100 : 0;
-
-          return (
-            <View key={item.category} style={styles.categoryMetricRow}>
-              <View style={styles.categoryMetricHeader}>
-                <Text style={styles.categoryName}>{item.category}</Text>
-                <Text style={styles.categoryValue}>
-                  {item.won} ganadas de {item.participated} participaciones
-                </Text>
+      {categoryMetrics.length > 0 ? (
+        <ActivityCard title="Por categoria" style={styles.categoryCard}>
+          {categoryMetrics.map((item) => {
+            const value = item.participated > 0 ? (item.won / item.participated) * 100 : 0;
+            return (
+              <View key={item.category} style={styles.categoryMetricRow}>
+                <View style={styles.categoryMetricHeader}>
+                  <Text style={styles.categoryName}>{item.category}</Text>
+                  <Text style={styles.categoryValue}>
+                    {item.won} ganadas de {item.participated} participaciones
+                  </Text>
+                </View>
+                <MiniProgress color={colors.cocoa} value={value} />
               </View>
-              <MiniProgress color={colors.cocoa} value={value} />
-            </View>
-          );
-        })}
-      </ActivityCard>
+            );
+          })}
+        </ActivityCard>
+      ) : null}
     </>
   );
 }
 
 function AppModal({ children, onClose, title, visible }) {
   return (
-    <Modal
-      animationType="fade"
-      onRequestClose={onClose}
-      transparent
-      visible={visible}
-    >
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
@@ -914,27 +864,27 @@ function AppModal({ children, onClose, title, visible }) {
 }
 
 function AuctionDetailModal({ item, onClose }) {
-  if (!item) {
-    return null;
-  }
+  if (!item) return null;
 
   return (
     <AppModal onClose={onClose} title="Detalle de subasta" visible={Boolean(item)}>
       <ScrollView contentContainerStyle={styles.modalScrollContent}>
-        <Image source={item.image} resizeMode="contain" style={styles.detailImage} />
+        {item.image ? (
+          <Image source={item.image} resizeMode="contain" style={styles.detailImage} />
+        ) : null}
         <View style={styles.auctionModalTitleRow}>
           <Text style={[styles.modalProductTitle, styles.auctionModalTitle]}>{item.title}</Text>
           <StatusPill label={item.status} style={styles.auctionModalStatus} />
         </View>
-        <Text style={styles.modalText}>{item.description}</Text>
+        {item.description ? <Text style={styles.modalText}>{item.description}</Text> : null}
         <View style={styles.detailList}>
           <Text style={styles.detailLine}>Fecha: {item.date}</Text>
-          <Text style={styles.detailLine}>Ubicacion: {item.location}</Text>
-          <Text style={styles.detailLine}>Organiza: {item.organizer}</Text>
-          <Text style={styles.detailLine}>Piezas: {item.pieces}</Text>
+          {item.location !== '-' ? <Text style={styles.detailLine}>Ubicacion: {item.location}</Text> : null}
+          {item.organizer ? <Text style={styles.detailLine}>Organiza: {item.organizer}</Text> : null}
+          {item.pieces ? <Text style={styles.detailLine}>Piezas: {item.pieces}</Text> : null}
           <Text style={styles.detailLine}>Categoria: {item.category}</Text>
-          <Text style={styles.detailLine}>Puja minima: {item.minimumBid}</Text>
-          <Text style={styles.detailLine}>{item.registration}</Text>
+          {item.minimumBid ? <Text style={styles.detailLine}>Puja minima: {item.minimumBid}</Text> : null}
+          {item.registration ? <Text style={styles.detailLine}>{item.registration}</Text> : null}
         </View>
         <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
           <Text style={styles.modalPrimaryText}>Cerrar</Text>
@@ -945,25 +895,35 @@ function AuctionDetailModal({ item, onClose }) {
 }
 
 function PurchaseDetailModal({ item, onClose }) {
-  if (!item) {
-    return null;
-  }
+  if (!item) return null;
 
   return (
     <AppModal onClose={onClose} title="Detalle de compra" visible={Boolean(item)}>
       <ScrollView contentContainerStyle={styles.modalScrollContent}>
-        <Image source={item.image} resizeMode="contain" style={styles.detailImage} />
+        {item.image ? (
+          <Image source={item.image} resizeMode="contain" style={styles.detailImage} />
+        ) : null}
         <Text style={styles.modalProductTitle}>{item.title}</Text>
         <Text style={styles.modalText}>Subasta: {item.auction}</Text>
-        <Text style={styles.modalText}>Total pagado: {item.amount}</Text>
+        <Text style={styles.modalText}>Total: {item.amount}</Text>
+        <Text style={styles.modalText}>Importe: {item.baseAmount}</Text>
+        <Text style={styles.modalText}>Comision: {item.commissionLabel || formatAmount(item.commission, item.currency)}</Text>
+        <Text style={styles.modalText}>
+          Envio: {item.retiraPersonalmente ? 'No aplica por retiro personal' : item.shippingCost}
+        </Text>
+        {item.retiraPersonalmente ? (
+          <Text style={styles.modalStrongText}>Seguro eliminado por retiro personal.</Text>
+        ) : null}
         <Text style={styles.modalText}>Fecha de compra: {item.date}</Text>
-        <View style={styles.detailList}>
-          <Text style={styles.detailLine}>Vendedor: {item.details.seller}</Text>
-          <Text style={styles.detailLine}>Lote: {item.details.lot}</Text>
-          <Text style={styles.detailLine}>Talle: {item.details.size}</Text>
-          <Text style={styles.detailLine}>Material: {item.details.material}</Text>
-          <Text style={styles.detailLine}>Estado: {item.details.condition}</Text>
-        </View>
+        {item.details ? (
+          <View style={styles.detailList}>
+            {item.details.seller ? <Text style={styles.detailLine}>Vendedor: {item.details.seller}</Text> : null}
+            {item.details.lot ? <Text style={styles.detailLine}>Lote: {item.details.lot}</Text> : null}
+            {item.details.size ? <Text style={styles.detailLine}>Talle: {item.details.size}</Text> : null}
+            {item.details.material ? <Text style={styles.detailLine}>Material: {item.details.material}</Text> : null}
+            {item.details.condition ? <Text style={styles.detailLine}>Estado: {item.details.condition}</Text> : null}
+          </View>
+        ) : null}
         <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
           <Text style={styles.modalPrimaryText}>Cerrar</Text>
         </Pressable>
@@ -972,10 +932,8 @@ function PurchaseDetailModal({ item, onClose }) {
   );
 }
 
-function PickupConfirmModal({ item, onClose, onConfirm }) {
-  if (!item) {
-    return null;
-  }
+function PickupConfirmModal({ item, isLoading, onClose, onConfirm }) {
+  if (!item) return null;
 
   return (
     <AppModal onClose={onClose} title="Retiro personal" visible={Boolean(item)}>
@@ -986,17 +944,23 @@ function PickupConfirmModal({ item, onClose, onConfirm }) {
       <Text style={styles.modalStrongText}>
         ¿Estas segura de que queres retirar "{item.title}" personalmente?
       </Text>
-      <View style={styles.pickupAddressBox}>
-        <Text style={styles.pickupAddressLabel}>Direccion de retiro</Text>
-        <Text style={styles.pickupAddressText}>{item.pickupAddress}</Text>
-        <Text style={styles.pickupAddressText}>{item.pickupWindow}</Text>
-      </View>
+      {item.pickupAddress ? (
+        <View style={styles.pickupAddressBox}>
+          <Text style={styles.pickupAddressLabel}>Direccion de retiro</Text>
+          <Text style={styles.pickupAddressText}>{item.pickupAddress}</Text>
+          {item.pickupWindow ? <Text style={styles.pickupAddressText}>{item.pickupWindow}</Text> : null}
+        </View>
+      ) : null}
       <View style={styles.modalActions}>
-        <Pressable onPress={onClose} style={styles.modalSecondaryButton}>
+        <Pressable disabled={isLoading} onPress={onClose} style={styles.modalSecondaryButton}>
           <Text style={styles.modalSecondaryText}>Cancelar</Text>
         </Pressable>
-        <Pressable onPress={onConfirm} style={styles.modalPrimaryButtonSmall}>
-          <Text style={styles.modalPrimaryText}>Si, retirar</Text>
+        <Pressable
+          disabled={isLoading}
+          onPress={onConfirm}
+          style={[styles.modalPrimaryButtonSmall, isLoading ? styles.modalButtonDisabled : null]}
+        >
+          <Text style={styles.modalPrimaryText}>{isLoading ? 'Confirmando...' : 'Si, retirar'}</Text>
         </Pressable>
       </View>
     </AppModal>
@@ -1004,18 +968,18 @@ function PickupConfirmModal({ item, onClose, onConfirm }) {
 }
 
 function PickupLocationModal({ item, onClose }) {
-  if (!item) {
-    return null;
-  }
+  if (!item) return null;
 
   return (
     <AppModal onClose={onClose} title="Ubicacion de retiro" visible={Boolean(item)}>
       <Text style={styles.modalText}>
         Puede retirar en {item.pickupAddress} {item.pickupWindow}.
       </Text>
-      <View style={styles.locationMap}>
-        <AddressMapPreview address={item.pickup} />
-      </View>
+      {item.pickup ? (
+        <View style={styles.locationMap}>
+          <AddressMapPreview address={item.pickup} />
+        </View>
+      ) : null}
       <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
         <Text style={styles.modalPrimaryText}>Entendido</Text>
       </Pressable>
@@ -1025,92 +989,168 @@ function PickupLocationModal({ item, onClose }) {
 
 export default function MyActivityScreen({ onPayPenalty }) {
   const [activeTab, setActiveTab] = useState('Subastas');
+  const [tabData, setTabData] = useState({});
+  const [tabLoading, setTabLoading] = useState({});
+  const [tabError, setTabError] = useState({});
+
   const [auctionDetailItem, setAuctionDetailItem] = useState(null);
   const [detailItem, setDetailItem] = useState(null);
   const [pickupConfirmationItem, setPickupConfirmationItem] = useState(null);
   const [pickupLocationItem, setPickupLocationItem] = useState(null);
-  const [confirmedPickupIds, setConfirmedPickupIds] = useState({});
+  const [isConfirmingPickup, setIsConfirmingPickup] = useState(false);
 
-  const [wonAuctions, setWonAuctions] = useState(INITIAL_WON_AUCTIONS);
   const [userPaymentMethods, setUserPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState({});
 
+  const loadedTabs = useRef(new Set());
+  const loadingTabs = useRef(new Set());
+
   useEffect(() => {
-    async function loadData() {
+    async function loadPaymentMethods() {
       try {
         const pmRes = await listPaymentMethods();
-        if (pmRes && Array.isArray(pmRes.datos) && pmRes.datos.length > 0) {
-          const mapped = pmRes.datos.map((pm) => ({
-            id: String(pm.identificador || pm.id),
-            brand: pm.detalle?.red || (pm.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
-            last4: pm.detalle?.ultimosCuatroDigitos || pm.detalle?.numeroCuenta?.slice(-4) || '4367',
-            expiry: formatPaymentExpiration(pm.detalle?.fechaVencimiento),
-            cardholder: pm.detalle?.titular || pm.detalle?.nombreTitular || 'Juana Mendez',
-          }));
-          setUserPaymentMethods(mapped);
+        const paymentMethods = getResponseItems(pmRes);
+
+        if (paymentMethods.length > 0) {
+          setUserPaymentMethods(
+            paymentMethods.map((pm) => ({
+              id: String(pm.identificador || pm.id),
+              brand:
+                pm.detalle?.red ||
+                pm.detalle?.nombreBanco ||
+                (pm.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
+              last4:
+                pm.detalle?.ultimosCuatroDigitos ||
+                String(pm.detalle?.numeroCuenta || '').slice(-4) ||
+                '4367',
+              expiry: formatPaymentExpiration(pm.detalle?.fechaVencimiento),
+              cardholder:
+                pm.detalle?.titular ||
+                pm.detalle?.nombreTitular ||
+                'Juana Mendez',
+            }))
+          );
         }
-      } catch (err) {
-        // use default payment methods
-      }
-
-      try {
-        const purchasesRes = await apiFetch('/v1/mi/compras');
-        if (purchasesRes && Array.isArray(purchasesRes.datos) && purchasesRes.datos.length > 0) {
-          const mappedPurchases = purchasesRes.datos.map((compra) => {
-            const isPagado = Boolean(compra.pagado);
-            const fecSubasta = compra.fechaPago ? new Date(compra.fechaPago) : new Date();
-            const venc = compra.fechaVencimiento
-              ? new Date(compra.fechaVencimiento)
-              : new Date(fecSubasta.getTime() + 2 * 24 * 60 * 60 * 1000);
-
-            const formatDateStr = (d) => {
-              if (!d || isNaN(d.getTime())) return '14/04/2026';
-              const day = String(d.getDate()).padStart(2, '0');
-              const month = String(d.getMonth() + 1).padStart(2, '0');
-              const year = d.getFullYear();
-              return `${day}/${month}/${year}`;
-            };
-
-            const prod = compra.detallesProducto || {};
-            const firstFoto = Array.isArray(prod.fotos) && prod.fotos[0]
-              ? { uri: resolveApiAssetUrl(prod.fotos[0]) }
-              : require('../../assets/activity/sweet-lolita-dress.webp');
-
-            let fullTitle = '';
-            if (prod.nombre && prod.descripcionCatalogo) {
-              fullTitle = `${prod.nombre} - ${prod.descripcionCatalogo}`;
-            } else {
-              fullTitle = prod.nombre || prod.descripcionCatalogo || `Subasta #${compra.subasta} - Producto #${compra.producto}`;
-            }
-
-            return {
-              id: compra.identificador,
-              code: prod.codigo || `SUB-${compra.identificador}`,
-              title: fullTitle,
-              image: firstFoto,
-              finalPrice: Number(compra.importe) || 140,
-              shipping: Number(compra.costoEnvio) || 0,
-              commission: Number(compra.comision) || 20,
-              currency: compra.moneda || 'USD',
-              status: isPagado ? 'pagado' : 'pendiente',
-              auctionDate: formatDateStr(fecSubasta),
-              dueDate: formatDateStr(venc),
-              fineAmount: '$300 USD',
-              paidDate: isPagado ? formatDateStr(new Date(compra.fechaPago)) : null,
-              paymentMethod: isPagado
-                ? { brand: 'Visa', last4: '4367', cardholder: 'Juana Mendez' }
-                : null,
-            };
-          });
-
-          setWonAuctions(mappedPurchases);
-        }
-      } catch (err) {
-        // keep initial won auctions state
+      } catch {
+        setUserPaymentMethods(DEFAULT_PAYMENT_METHODS);
       }
     }
 
-    loadData();
+    loadPaymentMethods();
+  }, []);
+
+  const fetchTab = useCallback(async (tab) => {
+    if (loadedTabs.current.has(tab) || loadingTabs.current.has(tab)) return;
+
+    loadingTabs.current.add(tab);
+    setTabLoading((prev) => ({ ...prev, [tab]: true }));
+    setTabError((prev) => ({ ...prev, [tab]: null }));
+
+    try {
+      let result;
+
+      if (tab === 'Subastas') {
+        const res = await apiFetch('/v1/mi/subastas?pagina=1&cantidad=50');
+        result = getResponseItems(res).map(mapSubasta);
+      } else if (tab === 'Pujas') {
+        const res = await apiFetch('/v1/mi/pujas?pagina=1&cantidad=100');
+        result = getResponseItems(res).map(mapPuja);
+      } else if (tab === 'Compras') {
+        const res = await apiFetch('/v1/mi/compras?pagina=1&cantidad=50');
+        result = getResponseItems(res).map(mapCompra);
+      } else if (tab === 'Multas') {
+        const res = await apiFetch('/v1/mi/multas?pagina=1&cantidad=50');
+        result = getResponseItems(res).map(mapMulta);
+      } else if (tab === 'Metricas') {
+        const [metricasRes, pujasRes, comprasRes, subastasRes] = await Promise.all([
+          apiFetch('/v1/mi/metricas'),
+          apiFetch('/v1/mi/pujas?pagina=1&cantidad=100'),
+          apiFetch('/v1/mi/compras?pagina=1&cantidad=100'),
+          apiFetch('/v1/mi/subastas?pagina=1&cantidad=100'),
+        ]);
+
+        const pujas = getResponseItems(pujasRes);
+        const compras = getResponseItems(comprasRes);
+        const subastas = getResponseItems(subastasRes);
+
+        const totalImportePujado = pujas.reduce(
+          (acc, puja) => acc + Number(puja.importe || 0),
+          0
+        );
+
+        const totalImportePagado = compras
+          .filter((compra) => isTruthyFlag(compra.pagado))
+          .reduce((acc, compra) => acc + Number(compra.importe || 0), 0);
+
+        const categoriasMap = {};
+
+        subastas.forEach((subasta) => {
+          const categoria = subasta.categoria || 'sin categoria';
+
+          if (!categoriasMap[categoria]) {
+            categoriasMap[categoria] = {
+              categoria,
+              participaciones: 0,
+              ganadas: 0,
+            };
+          }
+
+          categoriasMap[categoria].participaciones += 1;
+        });
+
+        const subastasPorId = {};
+
+        subastas.forEach((subasta) => {
+          subastasPorId[subasta.identificador] = subasta;
+        });
+
+        pujas.forEach((puja) => {
+          if (puja.ganador !== 'si') return;
+
+          const subastaId =
+            puja.subasta?.identificador ??
+            puja.subasta?.id ??
+            puja.idSubasta;
+
+          const subasta = subastasPorId[subastaId];
+
+          if (!subasta?.categoria) return;
+
+          const categoria = subasta.categoria;
+
+          if (!categoriasMap[categoria]) {
+            categoriasMap[categoria] = {
+              categoria,
+              participaciones: 0,
+              ganadas: 0,
+            };
+          }
+
+          categoriasMap[categoria].ganadas += 1;
+        });
+
+        result = {
+          metricas: {
+            ...metricasRes,
+            totalSubastasParticipadas: subastas.length,
+            totalGanadas: metricasRes.pujasGanadas ?? 0,
+            totalPujasRealizadas: metricasRes.totalPujas ?? pujas.length,
+            totalImportePagado,
+            totalImportePujado,
+            porCategoria: Object.values(categoriasMap),
+          },
+          monthlyBidHistory: buildMonthlyBids(pujas),
+        };
+      }
+
+      loadedTabs.current.add(tab);
+      setTabData((prev) => ({ ...prev, [tab]: result }));
+    } catch (err) {
+      setTabError((prev) => ({ ...prev, [tab]: getApiErrorMessage(err, 'No se pudo cargar la información.') }));
+    } finally {
+      loadingTabs.current.delete(tab);
+      setTabLoading((prev) => ({ ...prev, [tab]: false }));
+    }
   }, []);
 
   function handleSelectPayment(itemId, paymentId) {
@@ -1121,51 +1161,78 @@ export default function MyActivityScreen({ onPayPenalty }) {
   }
 
   async function handlePayWonAuction(itemId, paymentId) {
-    const pm = userPaymentMethods.find((p) => String(p.id) === String(paymentId)) || userPaymentMethods[0];
+    const paymentMethod =
+      userPaymentMethods.find((p) => String(p.id) === String(paymentId)) ||
+      userPaymentMethods[0];
+    const numericItemId = Number(itemId);
+    const numericPaymentId = Number(paymentId);
 
-    if (typeof itemId === 'number' || (!isNaN(itemId) && Number(itemId) > 0)) {
+    if (Number.isFinite(numericItemId) && numericItemId > 0) {
       try {
         await apiFetch(`/v1/mi/compras/${itemId}/pagar`, {
-          body: { idMedioPago: Number(paymentId) },
+          body: Number.isFinite(numericPaymentId) ? { idMedioPago: numericPaymentId } : {},
           method: 'POST',
         });
       } catch (err) {
-        console.log('[MyActivityScreen] Error paying purchase via API:', err);
+        setTabError((prev) => ({
+          ...prev,
+          Compras: getApiErrorMessage(err, 'No se pudo registrar el pago.'),
+        }));
+        return;
       }
     }
 
-    const todayStr = new Date().toLocaleDateString('es-AR', {
+    const paidDate = new Date().toLocaleDateString('es-AR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
     });
 
-    setWonAuctions((prev) =>
-      prev.map((auc) => {
-        if (auc.id === itemId) {
-          return {
-            ...auc,
-            status: 'pagado',
-            paidDate: todayStr,
-            paymentMethod: pm,
-          };
-        }
-        return auc;
-      })
-    );
-  }
-
-  function confirmPickup() {
-    if (!pickupConfirmationItem) {
-      return;
-    }
-
-    setConfirmedPickupIds((currentValues) => ({
-      ...currentValues,
-      [pickupConfirmationItem.id]: true,
+    setTabData((prev) => ({
+      ...prev,
+      Compras: (prev.Compras || []).map((compra) =>
+        String(compra.id) === String(itemId)
+          ? {
+              ...compra,
+              paidDate,
+              paymentMethod,
+              status: 'pagado',
+            }
+          : compra
+      ),
     }));
-    setPickupConfirmationItem(null);
   }
+
+  function retryTab(tab) {
+    loadedTabs.current.delete(tab);
+    fetchTab(tab);
+  }
+
+  useEffect(() => {
+    fetchTab(activeTab);
+  }, [activeTab, fetchTab]);
+
+  async function handleConfirmPickup() {
+    if (!pickupConfirmationItem) return;
+    setIsConfirmingPickup(true);
+    try {
+      await apiFetch(`/v1/mi/compras/${pickupConfirmationItem.identificador}`, {
+        method: 'PATCH',
+        body: { retiraPersonalmente: true },
+      });
+      setPickupConfirmationItem(null);
+      loadedTabs.current.delete('Compras');
+      fetchTab('Compras');
+    } catch {
+      setPickupConfirmationItem(null);
+    } finally {
+      setIsConfirmingPickup(false);
+    }
+  }
+
+  const isLoading = Boolean(tabLoading[activeTab]);
+  const error = tabError[activeTab];
+  const data = tabData[activeTab];
 
   return (
     <View style={styles.screen}>
@@ -1173,70 +1240,87 @@ export default function MyActivityScreen({ onPayPenalty }) {
         <Text style={styles.title}>Mi actividad</Text>
         <ActivitySelect activeTab={activeTab} onChange={setActiveTab} />
 
-        {activeTab === 'Subastas' ? (
-          <View style={styles.tabSection}>
-            {auctionRows.map((item) => (
-              <AuctionRow
-                item={item}
-                key={item.title}
-                onPress={() => setAuctionDetailItem(item)}
-              />
-            ))}
-          </View>
-        ) : null}
-
-        {activeTab === 'Compras' ? (
-          <View style={styles.tabSection}>
-            {wonAuctions.map((item) => (
-              <WonAuctionCard
-                item={item}
-                key={item.id}
-                onPay={handlePayWonAuction}
-                onSelectPayment={(paymentId) => handleSelectPayment(item.id, paymentId)}
-                paymentMethods={userPaymentMethods}
-                selectedPaymentId={selectedPaymentMethods[item.id]}
-              />
-            ))}
-            <Pressable style={styles.loadMoreButton}>
-              <Text style={styles.loadMoreButtonText}>Cargar mas</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {activeTab === 'Pujas' ? (
-          <View style={styles.tabSection}>
-            {bidRows.map((item) => (
-              <BidRow item={item} key={item.title} />
-            ))}
-          </View>
-        ) : null}
-
-        {activeTab === 'Multas' ? (
-          <View style={styles.tabSection}>
-            <ErrorSectionTitle>Incumplimiento de pago</ErrorSectionTitle>
-            <View style={styles.penaltyGroupDivider} />
-            {penaltyRows.map((item) => (
-              <PenaltyRow
-                item={item}
-                key={`${item.auction}-${item.status}`}
-                onPayPenalty={onPayPenalty}
-              />
-            ))}
-            <Notice>
-              Si no abonas la/s multa/s no podras participar en nuevas subastas.
-            </Notice>
-          </View>
-        ) : null}
-
-        {activeTab === 'Metricas' ? <MetricsContent /> : null}
+        <View style={styles.tabSection}>
+          {isLoading ? (
+            <LoadingState />
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => retryTab(activeTab)} />
+          ) : activeTab === 'Subastas' ? (
+            !data || data.length === 0 ? (
+              <EmptyState message="No participaste en ninguna subasta todavia." />
+            ) : (
+              data.map((item) => (
+                <AuctionRow
+                  item={item}
+                  key={item.identificador}
+                  onPress={() => setAuctionDetailItem(item)}
+                />
+              ))
+            )
+          ) : activeTab === 'Compras' ? (
+            !data || data.length === 0 ? (
+              <EmptyState message="No realizaste compras todavia." />
+            ) : (
+              <>
+                {data.map((item) => (
+                  <WonAuctionCard
+                    item={item}
+                    key={item.id}
+                    onPay={handlePayWonAuction}
+                    onRequestPickup={() => setPickupConfirmationItem(item)}
+                    onSelectPayment={(paymentId) => handleSelectPayment(item.id, paymentId)}
+                    onShowDetail={() => setDetailItem(item)}
+                    onShowPickupLocation={() => setPickupLocationItem(item)}
+                    paymentMethods={userPaymentMethods}
+                    selectedPaymentId={selectedPaymentMethods[item.id]}
+                  />
+                ))}
+                <Notice>
+                  Si marcas que retiras personalmente, no podras deshacer esta accion
+                  y perderas la cobertura del seguro sobre tu compra. Si no seleccionas
+                  esta opcion, el producto sera enviado automaticamente a tu domicilio registrado.
+                </Notice>
+              </>
+            )
+          ) : activeTab === 'Pujas' ? (
+            !data || data.length === 0 ? (
+              <EmptyState message="No realizaste pujas todavia." />
+            ) : (
+              data.map((item, idx) => (
+                <BidRow item={item} key={`${item.title}-${idx}`} />
+              ))
+            )
+          ) : activeTab === 'Multas' ? (
+            !data || data.length === 0 ? (
+              <EmptyState message="No tenes multas registradas." />
+            ) : (
+              <>
+                <ErrorSectionTitle>Incumplimiento de pago</ErrorSectionTitle>
+                <View style={styles.penaltyGroupDivider} />
+                {data.map((item) => (
+                  <PenaltyRow
+                    item={item}
+                    key={item.id}
+                    onPayPenalty={onPayPenalty}
+                  />
+                ))}
+                <Notice>
+                  Si no abonas la/s multa/s no podras participar en nuevas subastas.
+                </Notice>
+              </>
+            )
+          ) : activeTab === 'Metricas' && data ? (
+            <MetricsContent metricas={data.metricas} monthlyBidHistory={data.monthlyBidHistory} />
+          ) : null}
+        </View>
       </ActivityCard>
-
       <AuctionDetailModal item={auctionDetailItem} onClose={() => setAuctionDetailItem(null)} />
       <PurchaseDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
       <PickupConfirmModal
         item={pickupConfirmationItem}
+        isLoading={isConfirmingPickup}
         onClose={() => setPickupConfirmationItem(null)}
-        onConfirm={confirmPickup}
+        onConfirm={handleConfirmPickup}
       />
       <PickupLocationModal
         item={pickupLocationItem}
@@ -1369,6 +1453,33 @@ const styles = StyleSheet.create({
     opacity: 0.45,
     width: '100%',
   },
+  centerState: {
+    alignItems: 'center',
+    paddingTop: 48,
+    rowGap: 16,
+  },
+  stateText: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  retryButton: {
+    alignItems: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  retryButtonText: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.medium,
+    fontSize: 14,
+    lineHeight: 18,
+  },
   auctionRow: {
     alignItems: 'flex-start',
     borderBottomColor: 'rgba(138, 74, 58, 0.42)',
@@ -1384,13 +1495,6 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     minWidth: 0,
-  },
-  purchaseRow: {
-    alignItems: 'stretch',
-    borderBottomColor: 'rgba(138, 74, 58, 0.42)',
-    borderBottomWidth: 1,
-    minHeight: 128,
-    paddingVertical: 10,
   },
   bidRow: {
     alignItems: 'flex-start',
@@ -1419,11 +1523,6 @@ const styles = StyleSheet.create({
     width: 68,
   },
   rowBody: {
-    flex: 1,
-    minWidth: 0,
-    paddingTop: 0,
-  },
-  purchaseBody: {
     flex: 1,
     minWidth: 0,
     paddingTop: 0,
@@ -1516,15 +1615,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     marginBottom: 8,
   },
-  purchaseAside: {
-    alignItems: 'flex-end',
-    rowGap: 7,
-    width: 105,
-  },
   pickupConfirmedStatus: {
-    alignSelf: 'center',
-  },
-  purchaseStatus: {
     alignSelf: 'center',
   },
   outlineButton: {
@@ -1549,34 +1640,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 16,
     textAlign: 'center',
-  },
-  penaltyTitleRow: {
-    alignItems: 'center',
-    columnGap: 4,
-    flexDirection: 'row',
-  },
-  penaltyTitle: {
-    color: colors.cocoa,
-    flex: 1,
-    fontFamily: fonts.bold,
-    fontSize: 13,
-    lineHeight: 17,
-  },
-  payPenaltyButton: {
-    alignItems: 'center',
-    alignSelf: 'flex-end',
-    borderColor: colors.burgundy,
-    borderRadius: 5,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 26,
-    paddingHorizontal: 6,
-  },
-  payPenaltyText: {
-    color: colors.textBurgundy,
-    fontFamily: fonts.medium,
-    fontSize: 13,
-    lineHeight: 16,
   },
   penaltyStatus: {
     alignSelf: 'center',
@@ -1799,12 +1862,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
   },
-  barYear: {
-    color: colors.mutedRose,
-    fontFamily: fonts.regular,
-    fontSize: 10,
-    lineHeight: 13,
-  },
   categoryMetricRow: {
     marginTop: 8,
   },
@@ -1973,6 +2030,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 38,
     paddingHorizontal: 16,
+  },
+  modalButtonDisabled: {
+    opacity: 0.6,
   },
   modalPrimaryText: {
     color: colors.cream,
@@ -2275,18 +2335,14 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     textAlign: 'center',
   },
-  loadMoreButton: {
-    alignSelf: 'center',
-    backgroundColor: colors.burgundy,
-    borderRadius: 20,
-    marginBottom: 24,
-    marginTop: 8,
-    paddingHorizontal: 32,
-    paddingVertical: 10,
-  },
-  loadMoreButtonText: {
-    color: colors.white,
-    fontFamily: fonts.bold,
-    fontSize: 15,
+  wonPurchaseActions: {
+    alignItems: 'center',
+    columnGap: 10,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    rowGap: 8,
+    width: '100%',
   },
 });

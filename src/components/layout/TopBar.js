@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 
+import { useNotifications } from '../../context/NotificationsContext';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 
@@ -20,43 +21,68 @@ const LOGO_RATIO = 965 / 258;
 const HORIZONTAL_PADDING = 20;
 const SIDE_SLOT_WIDTH = 50;
 
-const mockNotifications = [
-  {
-    id: 'private-payment-message',
-    text: 'Ganaste un producto en la subasta Gothic Night. Tenes mas informacion en Mi actividad > Compras realizadas.',
-    time: 'Hoy · 20:18',
-    title: 'Producto ganado',
-    unread: true,
-  },
-  {
-    id: 'outbid',
-    text: 'Tu puja en Sweet Dreams fue superada. Podes ofertar nuevamente si la subasta sigue abierta.',
-    time: 'Hoy · 18:42',
-    title: 'Puja superada',
-    unread: true,
-  },
-  {
-    id: 'payment-verified',
-    text: 'Tu tarjeta Visa terminada en 1234 fue verificada y ya puede usarse para pujar.',
-    time: 'Ayer · 11:05',
-    title: 'Medio de pago verificado',
-    unread: false,
-  },
-  {
-    id: 'penalty',
-    text: 'Tenes una multa pendiente del 10% por incumplimiento de pago. Debe abonarse para participar en nuevas subastas.',
-    time: '15/05 · 09:30',
-    title: 'Multa pendiente',
-    unread: false,
-  },
-  {
-    id: 'registration',
-    text: 'Recibiste el mail para ingresar a la app, completar el registro y generar tu clave personal.',
-    time: '12/05 · 16:20',
-    title: 'Registro autorizado',
-    unread: false,
-  },
-];
+const TYPE_TITLES = {
+  compra_ganada: 'Producto ganado',
+  compra_pagada: 'Compra confirmada',
+  multa_generada: 'Multa pendiente',
+  multa_pagada: 'Multa pagada',
+  producto_aceptado: 'Producto aceptado',
+  producto_en_subasta: 'Producto en subasta',
+  producto_rechazado: 'Producto rechazado',
+  producto_vendido: 'Producto vendido',
+  producto_no_vendido: 'Producto no vendido',
+  devolucion_producto: 'Producto devuelto',
+  cuenta_bloqueada: 'Cuenta bloqueada',
+  cuenta_verificada: 'Cuenta verificada',
+  medio_verificado: 'Medio de pago verificado',
+  medio_no_verificado: 'Medio de pago no verificado',
+  admin_cliente_pendiente: 'Nueva cuenta para verificar',
+  admin_medio_pago_pendiente: 'Nuevo medio de pago para verificar',
+  admin_producto_pendiente: 'Nuevo producto para verificar',
+};
+
+const TYPE_TEXTS = {
+  compra_ganada: (d) =>
+    `Ganaste un producto en la subasta. Tenés más información en Mi actividad > Compras realizadas.`,
+  compra_pagada: (d) =>
+    `Tu compra fue confirmada.${d?.importe ? ` Importe: $${d.importe}.` : ''}`,
+  multa_generada: (d) =>
+    `Tenés una multa pendiente${d?.importe ? ` de $${d.importe}` : ''}. Debe abonarse para participar en nuevas subastas.`,
+  multa_pagada: () => 'Tu multa fue pagada exitosamente.',
+  producto_aceptado: () =>
+    'Tu producto fue aceptado. Revisá las condiciones en tu catálogo y confirmá tu participación.',
+  producto_en_subasta: () =>
+    'Confirmaste las condiciones. Tu producto ya está activo en la subasta.',
+  producto_rechazado: (d) =>
+    `Tu producto fue rechazado.${d?.motivo ? ` Motivo: ${d.motivo}.` : ''}`,
+  producto_vendido: () => 'Tu producto fue vendido exitosamente.',
+  producto_no_vendido: () => 'Tu producto no recibió ofertas y está disponible nuevamente.',
+  devolucion_producto: () => 'Tu producto fue retirado del catálogo y está disponible nuevamente.',
+  cuenta_bloqueada: () =>
+    'Tu cuenta fue bloqueada por una multa impaga vencida. Abonala para continuar.',
+  cuenta_verificada: (d) =>
+    `Tu cuenta fue verificada.${d?.categoria ? ` Categoria asignada: ${d.categoria}.` : ''}`,
+  medio_verificado: (d) =>
+    `Tu medio de pago${d?.tipo ? ` (${d.tipo})` : ''} fue verificado y ya puede usarse para pujar.`,
+  medio_no_verificado: (d) =>
+    `Tu medio de pago${d?.tipo ? ` (${d.tipo})` : ''} no fue verificado. Revisalo o carga otro medio para poder pujar.`,
+  admin_cliente_pendiente: (d) =>
+    `Nueva cuenta pendiente${d?.email ? `: ${d.email}` : ''}.`,
+  admin_medio_pago_pendiente: (d) =>
+    `Nuevo medio de pago pendiente${d?.tipo ? ` (${d.tipo})` : ''}.`,
+  admin_producto_pendiente: (d) =>
+    `Nuevo producto para verificar${d?.nombre ? `: ${d.nombre}` : ''}.`,
+};
+
+function formatTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const hhmm = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  const diffDays = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diffDays === 0) return `Hoy · ${hhmm}`;
+  if (diffDays === 1) return `Ayer · ${hhmm}`;
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')} · ${hhmm}`;
+}
 
 function BackIcon() {
   return (
@@ -96,7 +122,6 @@ export default function TopBar({
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const canGoBack = typeof onBackPress === 'function';
-  const unreadCount = mockNotifications.filter((notification) => notification.unread).length;
   const notificationsTop = insets.top + TOP_BAR_HEIGHT - 6;
   const notificationsMaxHeight = Math.max(240, height - notificationsTop - 18);
   const availableLogoWidth =
@@ -107,6 +132,19 @@ export default function TopBar({
     320
   );
   const logoHeight = logoWidth / LOGO_RATIO;
+
+  const ctx = useNotifications();
+  const notifications = ctx?.notifications ?? [];
+  const unreadCount = notifications.filter(
+    (notification) => notification.leida === 'no'
+  ).length;
+  const markAsRead = ctx?.markAsRead ?? (() => {});
+  const refetchNotifications = ctx?.refetch ?? (() => {});
+
+  function openNotifications() {
+    refetchNotifications();
+    setIsNotificationsOpen(true);
+  }
 
   return (
     <View style={[styles.wrapper, { height: TOP_BAR_HEIGHT + insets.top }]}>
@@ -155,7 +193,7 @@ export default function TopBar({
             accessibilityLabel="Abrir notificaciones"
             accessibilityRole="button"
             hitSlop={10}
-            onPress={() => setIsNotificationsOpen(true)}
+            onPress={openNotifications}
             style={styles.sideSlot}
           >
             <NotificationIcon />
@@ -218,29 +256,46 @@ export default function TopBar({
                 showsVerticalScrollIndicator={false}
                 style={styles.notificationsScroller}
               >
-                {mockNotifications.map((notification) => (
-                  <View
-                    key={notification.id}
-                    style={[
-                      styles.notificationItem,
-                      notification.unread ? styles.notificationItemUnread : null,
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.notificationDot,
-                        notification.unread ? styles.notificationDotUnread : null,
-                      ]}
-                    />
-                    <View style={styles.notificationCopy}>
-                      <View style={styles.notificationTitleRow}>
-                        <Text style={styles.notificationTitle}>{notification.title}</Text>
-                        <Text style={styles.notificationTime}>{notification.time}</Text>
-                      </View>
-                      <Text style={styles.notificationText}>{notification.text}</Text>
-                    </View>
-                  </View>
-                ))}
+                {notifications.length === 0 ? (
+                  <Text style={styles.notificationsEmpty}>
+                    No tenés notificaciones todavía.
+                  </Text>
+                ) : (
+                  notifications.map((n) => {
+                    const title = TYPE_TITLES[n.tipo] ?? n.tipo;
+                    const textFn = TYPE_TEXTS[n.tipo];
+                    const text = textFn ? textFn(n.detalle) : '';
+                    const time = formatTime(n.creadaEn);
+                    const unread = n.leida === 'no';
+
+                    return (
+                      <Pressable
+                        key={n.identificador}
+                        onPress={() => unread && markAsRead(n.identificador)}
+                        style={[
+                          styles.notificationItem,
+                          unread ? styles.notificationItemUnread : null,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.notificationDot,
+                            unread ? styles.notificationDotUnread : null,
+                          ]}
+                        />
+                        <View style={styles.notificationCopy}>
+                          <View style={styles.notificationTitleRow}>
+                            <Text style={styles.notificationTitle}>{title}</Text>
+                            <Text style={styles.notificationTime}>{time}</Text>
+                          </View>
+                          {text ? (
+                            <Text style={styles.notificationText}>{text}</Text>
+                          ) : null}
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                )}
               </ScrollView>
             </View>
           </View>
@@ -352,6 +407,14 @@ const styles = StyleSheet.create({
   },
   notificationsList: {
     paddingTop: 5,
+  },
+  notificationsEmpty: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingVertical: 18,
+    textAlign: 'center',
   },
   notificationItem: {
     alignItems: 'flex-start',

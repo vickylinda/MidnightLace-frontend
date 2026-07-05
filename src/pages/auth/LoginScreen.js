@@ -15,6 +15,7 @@ export default function LoginScreen({
   onForgotPasswordPress,
   onLoginSuccess,
   onRegisterPress,
+  onSetPasswordPress,
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -117,6 +118,9 @@ export default function LoginScreen({
             <Text style={styles.link}>Registrate</Text>
           </Pressable>
         </View>
+        <Pressable onPress={onSetPasswordPress} style={styles.setPasswordLink}>
+          <Text style={styles.link}>Setear contrasenia con codigo de registro</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -168,5 +172,8 @@ const styles = StyleSheet.create({
     color: colors.textBurgundy,
     fontFamily: fonts.regular,
     fontSize: 16,
+  },
+  setPasswordLink: {
+    marginTop: 14,
   },
 });

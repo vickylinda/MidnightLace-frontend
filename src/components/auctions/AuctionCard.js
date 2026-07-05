@@ -27,7 +27,9 @@ export default function AuctionCard({
       ]}
     >
       <View style={styles.imageFrame}>
-        <Image source={imageSource} resizeMode="contain" style={styles.image} />
+        {imageSource ? (
+          <Image source={imageSource} resizeMode="contain" style={styles.image} />
+        ) : null}
       </View>
       <View style={styles.footer}>
         <View style={styles.info}>
@@ -35,7 +37,7 @@ export default function AuctionCard({
           <Text style={styles.detail}>{dateTime}</Text>
           <Text style={styles.detail}>{location}</Text>
           <Text style={styles.detail}>
-            {pieces} PIEZAS · Categoría: {category}
+            {pieces != null ? `${pieces} PIEZAS · ` : ''}Categoría: {category}
           </Text>
         </View>
         <StatusBadge label={status} style={styles.status} />
