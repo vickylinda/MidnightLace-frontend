@@ -20,6 +20,7 @@ import SubastadoStamp from '../../components/status/SubastadoStamp';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
+import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
 import { apiFetch } from '../../utils/http';
 
