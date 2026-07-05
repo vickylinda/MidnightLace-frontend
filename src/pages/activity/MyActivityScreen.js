@@ -309,9 +309,94 @@ function AuctionRow({ item, onPress }) {
   );
 }
 
+function PurchaseRow({ item, onRequestPickup, onShowDetail, onShowPickupLocation }) {
+  const isPickupConfirmed = item.retiraPersonalmente;
+
+  return (
+    <View style={styles.purchaseRow}>
+      <View style={styles.purchaseTopRow}>
+        {item.image ? (
+          <Image source={item.image} resizeMode="cover" style={styles.productImage} />
+        ) : null}
+        <View style={styles.purchaseBody}>
+          <Text numberOfLines={2} style={styles.rowTitle}>{item.title}</Text>
+          <Text style={styles.rowText}>Ganaste el {item.date}</Text>
+          <Text style={styles.rowText}>en la subasta {item.auction}</Text>
+          <Text style={styles.rowBold}>Total pagado: {item.amount}</Text>
+        </View>
+      </View>
+      <View style={styles.purchaseActions}>
+        {isPickupConfirmed ? (
+          <>
+            <StatusPill label="retira personalmente" style={styles.pickupConfirmedStatus} />
+            {item.pickup ? (
+              <Pressable onPress={onShowPickupLocation} style={[styles.outlineButton, styles.purchaseActionButton]}>
+                <Text style={styles.outlineButtonText}>Ubicacion</Text>
+              </Pressable>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Pressable
+              onPress={item.details ? onShowDetail : onRequestPickup}
+              style={[styles.outlineButton, styles.purchaseActionButton]}
+            >
+              <Text style={styles.outlineButtonText}>{item.details ? 'Ver detalle' : 'Retirar personalmente'}</Text>
+            </Pressable>
+            {!item.details ? null : (
+              <Pressable onPress={onRequestPickup} style={[styles.outlineButton, styles.purchaseActionButton]}>
+                <Text style={styles.outlineButtonText}>Retirar personalmente</Text>
+              </Pressable>
+            )}
+            <StatusPill label={item.status} style={styles.purchaseStatus} />
+          </>
+        )}
+      </View>
+    </View>
+  );
+}
+
 const DEFAULT_PAYMENT_METHODS = [
   { id: '1', brand: 'Visa', last4: '4367', expiry: '09/27', cardholder: 'Juana Mendez' },
   { id: '2', brand: 'Mastercard', last4: '2398', expiry: '12/28', cardholder: 'Juana Mendez' },
+];
+
+const INITIAL_WON_AUCTIONS = [
+  {
+    id: 'subasta-ganada-1',
+    code: 'PUIFT-017-BLACK&PINK-FREESIZE',
+    title: 'Clearance - Black & Pink Polka-dot Pattern Bowknot Gyaru Fashion Beret',
+    image: require('../../assets/activity/paw-top.jpg'),
+    finalPrice: 140,
+    shipping: 0,
+    commission: 20,
+    currency: 'USD',
+    status: 'pendiente',
+    auctionDate: '13/05/2026',
+    dueDate: '15/05/2026',
+    fineAmount: '$300 USD',
+    paidDate: null,
+    paymentMethod: null,
+  },
+  {
+    id: 'subasta-ganada-2',
+    code: 'M-O-073',
+    title: 'Red Butterfly Jacquard Fabric Black Collar and Ruffle Hem Lolita Dress',
+    image: require('../../assets/activity/sweet-lolita-dress.webp'),
+    finalPrice: 140,
+    shipping: 0,
+    commission: 20,
+    currency: 'USD',
+    status: 'pagado',
+    auctionDate: '12/04/2026',
+    dueDate: '14/04/2026',
+    paidDate: '14/04/2026',
+    paymentMethod: {
+      brand: 'Visa',
+      last4: '4367',
+      cardholder: 'Juana Mendez',
+    },
+  },
 ];
 
 function formatPaymentExpiration(value) {
@@ -431,7 +516,7 @@ function WonAuctionCard({
                         {isSelected ? <View style={styles.wonRadioDot} /> : null}
                       </View>
                       <Text style={styles.wonPaymentText}>
-                        {pm.brand || 'Visa'} â€¢â€¢â€¢â€¢ {pm.last4 || '4367'}
+                        {pm.brand || 'Visa'} •••• {pm.last4 || '4367'}
                       </Text>
                     </View>
                     <Text style={styles.wonPaymentExpiry}>
@@ -476,7 +561,7 @@ function WonAuctionCard({
             </View>
             <View>
               <Text style={styles.wonPaidMethodTitle}>
-                â€¢â€¢â€¢â€¢ {item.paymentMethod?.last4 || '4367'}
+                •••• {item.paymentMethod?.last4 || '4367'}
               </Text>
               <Text style={styles.wonPaidMethodSubtitle}>
                 {item.paymentMethod?.cardholder || 'Juana Mendez'}
@@ -998,7 +1083,6 @@ export default function MyActivityScreen({ onPayPenalty }) {
   const [pickupConfirmationItem, setPickupConfirmationItem] = useState(null);
   const [pickupLocationItem, setPickupLocationItem] = useState(null);
   const [isConfirmingPickup, setIsConfirmingPickup] = useState(false);
-
   const [userPaymentMethods, setUserPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState({});
 
@@ -1083,10 +1167,8 @@ export default function MyActivityScreen({ onPayPenalty }) {
           .reduce((acc, compra) => acc + Number(compra.importe || 0), 0);
 
         const categoriasMap = {};
-
         subastas.forEach((subasta) => {
           const categoria = subasta.categoria || 'sin categoria';
-
           if (!categoriasMap[categoria]) {
             categoriasMap[categoria] = {
               categoria,
@@ -1094,12 +1176,10 @@ export default function MyActivityScreen({ onPayPenalty }) {
               ganadas: 0,
             };
           }
-
           categoriasMap[categoria].participaciones += 1;
         });
 
         const subastasPorId = {};
-
         subastas.forEach((subasta) => {
           subastasPorId[subasta.identificador] = subasta;
         });
@@ -1111,13 +1191,11 @@ export default function MyActivityScreen({ onPayPenalty }) {
             puja.subasta?.identificador ??
             puja.subasta?.id ??
             puja.idSubasta;
-
           const subasta = subastasPorId[subastaId];
 
           if (!subasta?.categoria) return;
 
           const categoria = subasta.categoria;
-
           if (!categoriasMap[categoria]) {
             categoriasMap[categoria] = {
               categoria,
@@ -1125,7 +1203,6 @@ export default function MyActivityScreen({ onPayPenalty }) {
               ganadas: 0,
             };
           }
-
           categoriasMap[categoria].ganadas += 1;
         });
 
@@ -1247,7 +1324,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
             <ErrorState message={error} onRetry={() => retryTab(activeTab)} />
           ) : activeTab === 'Subastas' ? (
             !data || data.length === 0 ? (
-              <EmptyState message="No participaste en ninguna subasta todavia." />
+              <EmptyState message="No participaste en ninguna subasta todavía." />
             ) : (
               data.map((item) => (
                 <AuctionRow
@@ -1259,7 +1336,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
             )
           ) : activeTab === 'Compras' ? (
             !data || data.length === 0 ? (
-              <EmptyState message="No realizaste compras todavia." />
+              <EmptyState message="No realizaste compras todavía." />
             ) : (
               <>
                 {data.map((item) => (
@@ -1284,7 +1361,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
             )
           ) : activeTab === 'Pujas' ? (
             !data || data.length === 0 ? (
-              <EmptyState message="No realizaste pujas todavia." />
+              <EmptyState message="No realizaste pujas todavía." />
             ) : (
               data.map((item, idx) => (
                 <BidRow item={item} key={`${item.title}-${idx}`} />
@@ -1292,7 +1369,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
             )
           ) : activeTab === 'Multas' ? (
             !data || data.length === 0 ? (
-              <EmptyState message="No tenes multas registradas." />
+              <EmptyState message="No tenés multas registradas." />
             ) : (
               <>
                 <ErrorSectionTitle>Incumplimiento de pago</ErrorSectionTitle>
@@ -1314,6 +1391,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
           ) : null}
         </View>
       </ActivityCard>
+
       <AuctionDetailModal item={auctionDetailItem} onClose={() => setAuctionDetailItem(null)} />
       <PurchaseDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
       <PickupConfirmModal
@@ -1496,6 +1574,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     minWidth: 0,
   },
+  purchaseRow: {
+    alignItems: 'stretch',
+    borderBottomColor: 'rgba(138, 74, 58, 0.42)',
+    borderBottomWidth: 1,
+    minHeight: 128,
+    paddingVertical: 10,
+  },
   bidRow: {
     alignItems: 'flex-start',
     borderBottomColor: 'rgba(138, 74, 58, 0.42)',
@@ -1523,6 +1608,11 @@ const styles = StyleSheet.create({
     width: 68,
   },
   rowBody: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 0,
+  },
+  purchaseBody: {
     flex: 1,
     minWidth: 0,
     paddingTop: 0,
@@ -1616,6 +1706,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   pickupConfirmedStatus: {
+    alignSelf: 'center',
+  },
+  purchaseStatus: {
     alignSelf: 'center',
   },
   outlineButton: {

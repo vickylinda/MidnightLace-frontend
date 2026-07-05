@@ -14,9 +14,9 @@ export default function App() {
       <ToastProvider>
         <NotificationsProvider>
           <WinnerModalProvider>
-          <AppNavigator />
+            <AppNavigator />
+          </WinnerModalProvider>
         </NotificationsProvider>
-        </WinnerModalProvider>
       </ToastProvider>
     </SafeAreaProvider>
   );
