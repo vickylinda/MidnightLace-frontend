@@ -8,6 +8,7 @@ import React, {
   useRef,
 } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Image,
   Pressable,
@@ -131,6 +132,67 @@ export function WinnerModalProvider({ children }) {
   const [productDetails, setProductDetails] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [selectedMethodId, setSelectedMethodId] = useState(null);
+  const [isPaying, setIsPaying] = useState(false);
+  const [paymentResultModal, setPaymentResultModal] = useState({
+    visible: false,
+    success: false,
+    title: '',
+    message: '',
+  });
+
+  const handlePayment = async () => {
+    if (!winnerDetails || !winnerDetails.idRegistroSubasta) {
+      setShowWinnerModal(false);
+      setPaymentResultModal({
+        visible: true,
+        success: false,
+        title: 'No se pudo efectuar el pago',
+        message: 'No se encontraron los datos de la subasta ganada.',
+      });
+      return;
+    }
+
+    if (!selectedMethodId) {
+      setShowWinnerModal(false);
+      setPaymentResultModal({
+        visible: true,
+        success: false,
+        title: 'No se pudo efectuar el pago',
+        message: 'Por favor, seleccioná un medio de pago válido en tu perfil.',
+      });
+      return;
+    }
+
+    try {
+      setIsPaying(true);
+
+      await apiFetch(`/v1/mi/compras/${winnerDetails.idRegistroSubasta}/pagar`, {
+        method: 'POST',
+        body: {
+          idMedioPago: Number(selectedMethodId),
+        },
+      });
+
+      setShowWinnerModal(false);
+      setPaymentResultModal({
+        visible: true,
+        success: true,
+        title: '¡Pago Exitoso!',
+        message: 'El pago se efectuó exitosamente. Tu compra ha sido procesada con éxito.',
+      });
+    } catch (err) {
+      console.log('[WinnerModalProvider] Payment error:', err);
+      setShowWinnerModal(false);
+      setPaymentResultModal({
+        visible: true,
+        success: false,
+        title: 'No se pudo efectuar el pago',
+        message: err.message || 'No se pudo efectuar el pago. Por favor, verificá tu medio de pago e intentalo nuevamente.',
+      });
+    } finally {
+      setIsPaying(false);
+    }
+  };
 
   // Format price helper
   const formatPrice = (amount, curr) => {
@@ -436,10 +498,22 @@ export function WinnerModalProvider({ children }) {
                     </View>
 
                     {/* Pay Button */}
-                    <Pressable style={styles.modalPayButton}>
-                      <Text style={styles.modalPayButtonText}>
-                        {`PAGAR AHORA ${formatPrice(winnerDetails.total, winnerDetails.currency)}`}
-                      </Text>
+                    <Pressable
+                      disabled={isPaying}
+                      onPress={handlePayment}
+                      style={({ pressed }) => [
+                        styles.modalPayButton,
+                        isPaying ? { opacity: 0.7 } : null,
+                        pressed && !isPaying ? { opacity: 0.88, transform: [{ scale: 0.98 }] } : null,
+                      ]}
+                    >
+                      {isPaying ? (
+                        <ActivityIndicator color={colors.white} size="small" />
+                      ) : (
+                        <Text style={styles.modalPayButtonText}>
+                          {`PAGAR AHORA ${formatPrice(winnerDetails.total, winnerDetails.currency)}`}
+                        </Text>
+                      )}
                     </Pressable>
 
                     <Text style={styles.modalDisclaimer}>
@@ -448,6 +522,52 @@ export function WinnerModalProvider({ children }) {
                   </View>
                 </>
               )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Payment Result Modal (Success / Failure Notification) */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={paymentResultModal.visible}
+          onRequestClose={() => setPaymentResultModal((prev) => ({ ...prev, visible: false }))}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.resultModalCard}>
+              {paymentResultModal.success ? (
+                <View style={styles.resultIconCircleSuccess}>
+                  <Svg width={46} height={46} viewBox="0 0 24 24" fill="none">
+                    <Circle cx={12} cy={12} r={10} fill="#3FA54B" />
+                    <Path d="M8 12L11 15L16 9" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </View>
+              ) : (
+                <View style={styles.resultIconCircleError}>
+                  <Svg width={46} height={46} viewBox="0 0 24 24" fill="none">
+                    <Circle cx={12} cy={12} r={10} fill={colors.burgundy} />
+                    <Path d="M15 9L9 15M9 9L15 15" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                </View>
+              )}
+
+              <Text style={styles.resultModalTitle}>
+                {paymentResultModal.title}
+              </Text>
+
+              <Text style={styles.resultModalMessage}>
+                {paymentResultModal.message}
+              </Text>
+
+              <Pressable
+                onPress={() => setPaymentResultModal((prev) => ({ ...prev, visible: false }))}
+                style={({ pressed }) => [
+                  styles.resultModalButton,
+                  pressed ? { opacity: 0.88, transform: [{ scale: 0.98 }] } : null,
+                ]}
+              >
+                <Text style={styles.resultModalButtonText}>ENTENDIDO</Text>
+              </Pressable>
             </View>
           </View>
         </Modal>
@@ -699,5 +819,61 @@ const styles = StyleSheet.create({
     fontSize: 9,
     textAlign: 'center',
     marginTop: 6,
+  },
+  resultModalCard: {
+    alignItems: 'center',
+    backgroundColor: '#F6E3D1',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(81, 3, 16, 0.15)',
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    width: '88%',
+    maxWidth: 380,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  resultIconCircleSuccess: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  resultIconCircleError: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  resultModalTitle: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 20,
+    letterSpacing: 0,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  resultModalMessage: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  resultModalButton: {
+    alignItems: 'center',
+    backgroundColor: colors.burgundy,
+    borderRadius: 8,
+    height: 46,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  resultModalButtonText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    letterSpacing: 0.5,
   },
 });

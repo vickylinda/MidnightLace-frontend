@@ -197,7 +197,8 @@ function mapMulta(m) {
 }
 
 function StatusPill({ label, style }) {
-  const normalizedLabel = label.toLowerCase();
+  const safeLabel = String(label || '');
+  const normalizedLabel = safeLabel.toLowerCase();
   const tone =
     normalizedLabel.includes('finalizada') || normalizedLabel.includes('superada')
       ? 'danger'
@@ -207,7 +208,7 @@ function StatusPill({ label, style }) {
 
   return (
     <View style={[styles.statusPill, styles[`status_${tone}`], style]}>
-      <Text numberOfLines={1} style={styles.statusText}>{label}</Text>
+      <Text numberOfLines={1} style={styles.statusText}>{safeLabel || '-'}</Text>
     </View>
   );
 }
@@ -418,6 +419,7 @@ function formatNumberWithDots(value) {
 }
 
 function WonAuctionCard({
+  isPaying = false,
   item,
   onRequestPickup,
   paymentMethods = [],
@@ -530,10 +532,15 @@ function WonAuctionCard({
 
           {/* Pay Button */}
           <Pressable
-            style={styles.wonPayButton}
+            style={[styles.wonPayButton, isPaying ? styles.wonPayButtonDisabled : null]}
+            disabled={isPaying}
             onPress={() => onPay(item.id, currentSelectedPaymentId)}
           >
-            <Text style={styles.wonPayButtonText}>PAGAR {formattedTotal}</Text>
+            {isPaying ? (
+              <ActivityIndicator color={colors.white} size="small" />
+            ) : (
+              <Text style={styles.wonPayButtonText}>PAGAR {formattedTotal}</Text>
+            )}
           </Pressable>
           <Text style={styles.wonDisclaimerText}>
             Al confirmar aceptas nuestros Terminos y Politica de privacidad
@@ -935,12 +942,20 @@ function AppModal({ children, onClose, title, visible }) {
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <Pressable onPress={onClose} style={styles.modalCloseButton}>
-              <Text style={styles.modalCloseText}>x</Text>
-            </Pressable>
-          </View>
+          {title ? (
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{title}</Text>
+              <Pressable onPress={onClose} style={styles.modalCloseButton}>
+                <Text style={styles.modalCloseText}>x</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.modalHeaderNoTitle}>
+              <Pressable onPress={onClose} style={styles.modalCloseButton}>
+                <Text style={styles.modalCloseText}>x</Text>
+              </Pressable>
+            </View>
+          )}
           {children}
         </View>
       </View>
@@ -1072,6 +1087,35 @@ function PickupLocationModal({ item, onClose }) {
   );
 }
 
+function PaymentSuccessModal({ item, onClose }) {
+  if (!item) return null;
+
+  const totalAmount =
+    (item.finalPrice || 140) + (item.shipping || 0) + (item.commission || 20);
+  const formattedTotal = `$${formatNumberWithDots(totalAmount)} ${item.currency || 'USD'}`;
+
+  return (
+    <AppModal onClose={onClose} visible={Boolean(item)}>
+      <View style={styles.successModalContent}>
+        <View style={styles.successIconCircle}>
+          <Text style={styles.successIconCheck}>✓</Text>
+        </View>
+        <Text style={styles.successModalTitle}>¡Pago exitoso!</Text>
+        <Text style={styles.successModalBody}>
+          Tu pago de <Text style={styles.successModalStrongText}>{formattedTotal}</Text> por el artículo{' '}
+          <Text style={styles.successModalStrongText}>"{item.code || item.title}"</Text> se procesó correctamente.
+        </Text>
+        <Text style={styles.modalSubNotice}>
+          Estarás recibiendo un email con las próximas instrucciones a la brevedad.
+        </Text>
+        <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
+          <Text style={styles.modalPrimaryText}>Entendido</Text>
+        </Pressable>
+      </View>
+    </AppModal>
+  );
+}
+
 export default function MyActivityScreen({ onPayPenalty }) {
   const [activeTab, setActiveTab] = useState('Subastas');
   const [tabData, setTabData] = useState({});
@@ -1085,6 +1129,8 @@ export default function MyActivityScreen({ onPayPenalty }) {
   const [isConfirmingPickup, setIsConfirmingPickup] = useState(false);
   const [userPaymentMethods, setUserPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState({});
+  const [payingItemId, setPayingItemId] = useState(null);
+  const [paymentSuccessItem, setPaymentSuccessItem] = useState(null);
 
   const loadedTabs = useRef(new Set());
   const loadingTabs = useRef(new Set());
@@ -1104,19 +1150,16 @@ export default function MyActivityScreen({ onPayPenalty }) {
                 pm.detalle?.nombreBanco ||
                 (pm.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
               last4:
-                pm.detalle?.ultimosCuatroDigitos ||
-                String(pm.detalle?.numeroCuenta || '').slice(-4) ||
-                '4367',
-              expiry: formatPaymentExpiration(pm.detalle?.fechaVencimiento),
-              cardholder:
-                pm.detalle?.titular ||
-                pm.detalle?.nombreTitular ||
-                'Juana Mendez',
+                pm.detalle?.ultimos4 ||
+                pm.detalle?.cbu?.slice(-4) ||
+                '0000',
+              expiry: formatPaymentExpiration(pm.detalle?.vencimiento),
+              cardholder: pm.detalle?.titular || 'Juana Mendez',
             }))
           );
         }
-      } catch {
-        setUserPaymentMethods(DEFAULT_PAYMENT_METHODS);
+      } catch (err) {
+        // Fallback to default payment methods
       }
     }
 
@@ -1124,44 +1167,96 @@ export default function MyActivityScreen({ onPayPenalty }) {
   }, []);
 
   const fetchTab = useCallback(async (tab) => {
-    if (loadedTabs.current.has(tab) || loadingTabs.current.has(tab)) return;
+    if (loadedTabs.current.has(tab) || loadingTabs.current.has(tab)) {
+      return;
+    }
 
     loadingTabs.current.add(tab);
     setTabLoading((prev) => ({ ...prev, [tab]: true }));
     setTabError((prev) => ({ ...prev, [tab]: null }));
 
     try {
-      let result;
+      let result = null;
 
       if (tab === 'Subastas') {
-        const res = await apiFetch('/v1/mi/subastas?pagina=1&cantidad=50');
-        result = getResponseItems(res).map(mapSubasta);
-      } else if (tab === 'Pujas') {
-        const res = await apiFetch('/v1/mi/pujas?pagina=1&cantidad=100');
-        result = getResponseItems(res).map(mapPuja);
+        const subastasRes = await apiFetch('/v1/mi/subastas');
+        result = getResponseItems(subastasRes);
       } else if (tab === 'Compras') {
-        const res = await apiFetch('/v1/mi/compras?pagina=1&cantidad=50');
-        result = getResponseItems(res).map(mapCompra);
+        const comprasRes = await apiFetch('/v1/mi/compras');
+        const items = getResponseItems(comprasRes);
+        result = items.map((compra) => {
+          const isPagado = isTruthyFlag(compra.pagado);
+          const fecSubasta = compra.fechaPago ? new Date(compra.fechaPago) : new Date();
+          const venc = compra.fechaVencimiento
+            ? new Date(compra.fechaVencimiento)
+            : new Date(fecSubasta.getTime() + 2 * 24 * 60 * 60 * 1000);
+
+          const formatDateStr = (d) => {
+            if (!d || isNaN(d.getTime())) return '14/04/2026';
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
+          };
+
+          const prod = compra.detallesProducto || {};
+          const firstFoto = Array.isArray(prod.fotos) && prod.fotos[0]
+            ? { uri: resolveApiAssetUrl(prod.fotos[0]) }
+            : require('../../assets/activity/sweet-lolita-dress.webp');
+
+          let fullTitle = '';
+          if (prod.nombre && prod.descripcionCatalogo) {
+            fullTitle = `${prod.nombre} - ${prod.descripcionCatalogo}`;
+          } else {
+            fullTitle = prod.nombre || prod.descripcionCatalogo || `Subasta #${compra.subasta} - Producto #${compra.producto}`;
+          }
+
+          return {
+            id: compra.identificador,
+            code: prod.codigo || `SUB-${compra.identificador}`,
+            title: fullTitle,
+            image: firstFoto,
+            finalPrice: Number(compra.importe) || 140,
+            shipping: Number(compra.costoEnvio) || 0,
+            commission: Number(compra.comision) || 20,
+            currency: compra.moneda || 'USD',
+            status: isPagado ? 'pagado' : 'pendiente',
+            auctionDate: formatDateStr(fecSubasta),
+            dueDate: formatDateStr(venc),
+            fineAmount: '$300 USD',
+            paidDate: isPagado ? formatDateStr(new Date(compra.fechaPago)) : null,
+            paymentMethod: isPagado
+              ? { brand: 'Visa', last4: '4367', cardholder: 'Juana Mendez' }
+              : null,
+            identificador: compra.identificador,
+            retiraPersonalmente: compra.retiraPersonalmente,
+            pickupAddress: 'Av. Corrientes 1234, CABA',
+            pickupWindow: 'Lunes a Viernes de 10:00 a 18:00 hs',
+            pickup: 'Av. Corrientes 1234, CABA',
+          };
+        });
+      } else if (tab === 'Pujas') {
+        const pujasRes = await apiFetch('/v1/mi/pujas');
+        result = getResponseItems(pujasRes);
       } else if (tab === 'Multas') {
-        const res = await apiFetch('/v1/mi/multas?pagina=1&cantidad=50');
-        result = getResponseItems(res).map(mapMulta);
+        const multasRes = await apiFetch('/v1/mi/multas');
+        result = getResponseItems(multasRes);
       } else if (tab === 'Metricas') {
-        const [metricasRes, pujasRes, comprasRes, subastasRes] = await Promise.all([
+        const [metricasRes, subastasRes, pujasRes, comprasRes] = await Promise.all([
           apiFetch('/v1/mi/metricas'),
-          apiFetch('/v1/mi/pujas?pagina=1&cantidad=100'),
-          apiFetch('/v1/mi/compras?pagina=1&cantidad=100'),
-          apiFetch('/v1/mi/subastas?pagina=1&cantidad=100'),
+          apiFetch('/v1/mi/subastas'),
+          apiFetch('/v1/mi/pujas'),
+          apiFetch('/v1/mi/compras'),
         ]);
 
+        const subastas = getResponseItems(subastasRes);
         const pujas = getResponseItems(pujasRes);
         const compras = getResponseItems(comprasRes);
-        const subastas = getResponseItems(subastasRes);
 
         const totalImportePujado = pujas.reduce(
           (acc, puja) => acc + Number(puja.importe || 0),
           0
         );
-
         const totalImportePagado = compras
           .filter((compra) => isTruthyFlag(compra.pagado))
           .reduce((acc, compra) => acc + Number(compra.importe || 0), 0);
@@ -1238,11 +1333,17 @@ export default function MyActivityScreen({ onPayPenalty }) {
   }
 
   async function handlePayWonAuction(itemId, paymentId) {
+    if (payingItemId) return;
+    setPayingItemId(itemId);
+
     const paymentMethod =
       userPaymentMethods.find((p) => String(p.id) === String(paymentId)) ||
       userPaymentMethods[0];
     const numericItemId = Number(itemId);
     const numericPaymentId = Number(paymentId);
+
+    // 2-second loading animation delay as requested
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     if (Number.isFinite(numericItemId) && numericItemId > 0) {
       try {
@@ -1251,6 +1352,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
           method: 'POST',
         });
       } catch (err) {
+        setPayingItemId(null);
         setTabError((prev) => ({
           ...prev,
           Compras: getApiErrorMessage(err, 'No se pudo registrar el pago.'),
@@ -1265,19 +1367,32 @@ export default function MyActivityScreen({ onPayPenalty }) {
       year: 'numeric',
     });
 
-    setTabData((prev) => ({
-      ...prev,
-      Compras: (prev.Compras || []).map((compra) =>
-        String(compra.id) === String(itemId)
-          ? {
-              ...compra,
-              paidDate,
-              paymentMethod,
-              status: 'pagado',
-            }
-          : compra
-      ),
-    }));
+    let paidItemObj = null;
+
+    setTabData((prev) => {
+      const currentList = prev.Compras || [];
+      const updatedList = currentList.map((compra) => {
+        if (String(compra.id) === String(itemId)) {
+          paidItemObj = {
+            ...compra,
+            paidDate,
+            paymentMethod,
+            status: 'pagado',
+          };
+          return paidItemObj;
+        }
+        return compra;
+      });
+      return {
+        ...prev,
+        Compras: updatedList,
+      };
+    });
+
+    setPayingItemId(null);
+    if (paidItemObj) {
+      setPaymentSuccessItem(paidItemObj);
+    }
   }
 
   function retryTab(tab) {
@@ -1341,6 +1456,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
               <>
                 {data.map((item) => (
                   <WonAuctionCard
+                    isPaying={String(payingItemId) === String(item.id)}
                     item={item}
                     key={item.id}
                     onPay={handlePayWonAuction}
@@ -1403,6 +1519,10 @@ export default function MyActivityScreen({ onPayPenalty }) {
       <PickupLocationModal
         item={pickupLocationItem}
         onClose={() => setPickupLocationItem(null)}
+      />
+      <PaymentSuccessModal
+        item={paymentSuccessItem}
+        onClose={() => setPaymentSuccessItem(null)}
       />
     </View>
   );
@@ -1999,6 +2119,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 10,
   },
+  modalHeaderNoTitle: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 0,
+    marginTop: -4,
+  },
   modalTitle: {
     color: colors.burgundy,
     fontFamily: fonts.bold,
@@ -2354,8 +2481,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.burgundy,
     borderRadius: 8,
     justifyContent: 'center',
+    minHeight: 44,
     paddingVertical: 12,
     width: '100%',
+  },
+  wonPayButtonDisabled: {
+    opacity: 0.7,
   },
   wonPayButtonText: {
     color: colors.white,
@@ -2370,6 +2501,56 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     marginTop: 6,
     opacity: 0.75,
+    textAlign: 'center',
+  },
+  successModalContent: {
+    alignItems: 'center',
+    paddingBottom: 8,
+    paddingTop: 0,
+  },
+  successIconCircle: {
+    alignItems: 'center',
+    backgroundColor: '#508B57',
+    borderRadius: 999,
+    height: 48,
+    justifyContent: 'center',
+    marginBottom: 10,
+    width: 48,
+  },
+  successIconCheck: {
+    color: '#FFFFFF',
+    fontFamily: fonts.bold,
+    fontSize: 24,
+  },
+  successModalTitle: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 20,
+    lineHeight: 25,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  successModalBody: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 22,
+    marginVertical: 8,
+    paddingHorizontal: 4,
+    textAlign: 'center',
+    width: '100%',
+  },
+  successModalStrongText: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+  },
+  modalSubNotice: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 8,
+    opacity: 0.8,
     textAlign: 'center',
   },
   wonPriceDivider: {

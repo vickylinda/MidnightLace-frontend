@@ -228,18 +228,52 @@ function WebCameraView({ style, children }) {
 }
 
 function LiveBadge({ style, onPress }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.15,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.95,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1.10,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+        Animated.delay(450),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [pulseAnim]);
+
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.liveBadge,
-        pressed ? { opacity: 0.8, transform: [{ scale: 0.96 }] } : null,
-        style,
-      ]}
-    >
-      <LiveIcon />
-      <Text style={styles.liveText}>EN VIVO</Text>
-    </Pressable>
+    <Animated.View style={[{ transform: [{ scale: pulseAnim }], position: 'absolute', zIndex: 10 }, style]}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.liveBadge,
+          { position: 'relative', left: 0, top: 0 },
+          pressed ? { opacity: 0.8 } : null,
+        ]}
+      >
+        <LiveIcon />
+        <Text style={styles.liveText}>EN VIVO</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -578,8 +612,9 @@ export default function AuctionProductScreen({ product, subastaId }) {
   };
 
   // Handle Bid with specific increment option
+  const isBiddingRef = useRef(false);
   const handleBidWithIncrement = async (inc) => {
-    if (!isBeingSubastado || isBidding) return;
+    if (!isBeingSubastado || isBiddingRef.current) return;
 
     if (!bidPermission.canBid) {
       if (!isLoggedIn) {
@@ -595,7 +630,7 @@ export default function AuctionProductScreen({ product, subastaId }) {
     }
 
     try {
-      setIsBidding(true);
+      isBiddingRef.current = true;
 
       // 1. Get payment methods to find an active one in the correct currency
       const methods = await apiFetch('/v1/medios-de-pago?pagina=1&cantidad=20');
@@ -609,7 +644,6 @@ export default function AuctionProductScreen({ product, subastaId }) {
 
       if (!validMethod) {
         alert(`No tenés un medio de pago verificado y activo en ${currency} registrado. Por favor, agregalo en tu Perfil.`);
-        setIsBidding(false);
         return;
       }
 
@@ -629,7 +663,7 @@ export default function AuctionProductScreen({ product, subastaId }) {
       console.log('Error creating bid:', err);
       alert(err.message || 'No se pudo realizar la puja.');
     } finally {
-      setIsBidding(false);
+      isBiddingRef.current = false;
     }
   };
 
@@ -642,7 +676,7 @@ export default function AuctionProductScreen({ product, subastaId }) {
     const inc4 = Math.max(inc3 + 1, Math.round(baseVal * 0.20));
 
     const options = [inc1, inc2, inc3, inc4];
-    const isDisabled = !isBeingSubastado || !bidPermission.canBid || isBidding;
+    const isDisabled = !isBeingSubastado || !bidPermission.canBid;
 
     return (
       <View style={styles.bidButtonsContainer}>
@@ -657,19 +691,14 @@ export default function AuctionProductScreen({ product, subastaId }) {
                 accessibilityRole="button"
                 disabled={isDisabled}
                 onPress={() => handleBidWithIncrement(inc)}
-                style={({ pressed }) => [
+                style={[
                   styles.miniBidButton,
                   isDisabled ? styles.miniBidButtonDisabled : null,
-                  pressed && !isDisabled ? styles.miniBidButtonPressed : null,
                 ]}
               >
-                {isBidding ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text numberOfLines={1} style={styles.miniBidButtonText}>
-                    {label}
-                  </Text>
-                )}
+                <Text numberOfLines={1} style={styles.miniBidButtonText}>
+                  {label}
+                </Text>
               </Pressable>
             );
           })}
