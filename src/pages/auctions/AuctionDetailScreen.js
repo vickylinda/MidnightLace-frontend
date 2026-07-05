@@ -22,7 +22,6 @@ import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
 import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
-import { apiFetch } from '../../utils/http';
 
 const referenceColors = {
   card: '#F6E3D1',
