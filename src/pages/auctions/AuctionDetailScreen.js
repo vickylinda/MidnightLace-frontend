@@ -903,17 +903,6 @@ export default function AuctionDetailScreen({
           </View>
         </View>
 
-        {canStartNow ? (
-          <Pressable
-            disabled={starting}
-            onPress={handleStartNow}
-            style={[styles.startNowButton, starting ? styles.startNowButtonDisabled : null]}
-          >
-            <Text style={styles.startNowText}>{starting ? 'INICIANDO...' : 'INICIAR AHORA'}</Text>
-          </Pressable>
-        ) : null}
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-
         {isLoading ? (
           <View style={styles.feedbackCard}>
             <ActivityIndicator color={colors.burgundy} size="large" />
