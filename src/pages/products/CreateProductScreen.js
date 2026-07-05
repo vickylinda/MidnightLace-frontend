@@ -17,14 +17,30 @@ const PRODUCT_TYPES = [
   { label: 'Objeto de diseñador', value: 'designer' },
 ];
 
+const CURRENCY_OPTIONS = [
+  { label: 'ARS', value: 'ARS' },
+  { label: 'USD', value: 'USD' },
+];
+
+const PRODUCT_CONDITION_OPTIONS = [
+  { label: 'Nuevo', value: 'nuevo' },
+  { label: 'Usado', value: 'usado' },
+];
+
+const CATALOG_DESCRIPTION_MAX_LENGTH = 160;
+
 const INITIAL_FORM = {
+  catalogDescription: '',
+  completeDescription: '',
   creator: '',
   description: '',
   history: '',
   itemCount: '1',
+  moneda: '',
   name: '',
   objectDate: '',
   precioBase: '',
+  productCondition: '',
   productType: '',
   relevantDetails: '',
 };
@@ -54,10 +70,16 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
       creator: isSpecialProduct
         ? requiredError(form.creator, 'el artista o diseñador')
         : '',
-      description:
-        form.description.trim().length >= 20
+      catalogDescription:
+        form.catalogDescription.trim().length > 0 &&
+        form.catalogDescription.trim().length <= CATALOG_DESCRIPTION_MAX_LENGTH
           ? ''
-          : 'La descripción debe tener al menos 20 caracteres.',
+          : `La descripción breve es obligatoria y no puede superar los ${CATALOG_DESCRIPTION_MAX_LENGTH} caracteres.`,
+
+      completeDescription: requiredError(
+        form.completeDescription,
+        'la descripción completa'
+      ),
       history: isSpecialProduct
         ? requiredError(form.history, 'la historia y procedencia')
         : '',
@@ -74,6 +96,7 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
         form.name.trim().length >= 3
           ? ''
           : 'El nombre debe tener al menos 3 caracteres.',
+      moneda: requiredError(form.moneda, 'la moneda'),
       objectDate: isSpecialProduct
         ? requiredError(form.objectDate, 'la fecha del objeto')
         : '',
@@ -82,6 +105,7 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
           ? ''
           : 'Ingresá un precio base mayor a $0.01.',
       productType: requiredError(form.productType, 'el tipo de producto'),
+      productCondition: requiredError(form.productCondition, 'si el producto es nuevo o usado'),
       returnAgreement: returnAgreement
         ? ''
         : 'Debés aceptar las condiciones de devolución.',
@@ -119,13 +143,21 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
     try {
       const formData = new FormData();
 
-      const descripcionParts = [form.name, form.description];
+      const descripcionCompletaParts = [form.completeDescription.trim()];
+
       if (form.relevantDetails.trim()) {
-        descripcionParts.push(form.relevantDetails);
+        descripcionCompletaParts.push(
+          `Otros datos de interés:\n${form.relevantDetails.trim()}`
+        );
       }
-      formData.append('descripcionCompleta', descripcionParts.filter(Boolean).join('\n\n'));
+
+      formData.append('nombre', form.name.trim());
+      formData.append('descripcionCatalogo', form.catalogDescription.trim());
+      formData.append('descripcionCompleta', descripcionCompletaParts.join('\n\n'));
       formData.append('declaracionPropiedad', String(legalDeclaration));
       formData.append('precioBase', String(parseFloat(form.precioBase)));
+      formData.append('moneda', form.moneda);
+      formData.append('estadoProducto', form.productCondition);
 
       const imageValues = await Promise.all(
         images.slice(0, 8).map(async (image) => {
@@ -177,14 +209,24 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
       />
 
       <LineTextField
-        error={visibleError('description')}
-        label="Descripción*"
-        maxLength={600}
+        error={visibleError('catalogDescription')}
+        label="Descripción breve*"
+        maxLength={CATALOG_DESCRIPTION_MAX_LENGTH}
         multiline
-        onBlur={() => handleBlur('description')}
-        onChangeText={(value) => updateField('description', value)}
-        placeholder="Describí el estado, materiales, medidas y características."
-        value={form.description}
+        onBlur={() => handleBlur('catalogDescription')}
+        onChangeText={(value) => updateField('catalogDescription', value)}
+        placeholder="Ej. Vestido lolita color uva con encaje, moños y detalles delicados."
+        value={form.catalogDescription}
+      />
+
+      <LineTextField
+        error={visibleError('completeDescription')}
+        label="Descripción completa*"
+        multiline
+        onBlur={() => handleBlur('completeDescription')}
+        onChangeText={(value) => updateField('completeDescription', value)}
+        placeholder="Incluí talle, medidas, marca, material, color, estado de uso, fallas o detalles visibles."
+        value={form.completeDescription}
       />
 
       <LineSelectField
@@ -196,6 +238,17 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
         }}
         options={PRODUCT_TYPES}
         value={form.productType}
+      />
+
+      <LineSelectField
+        error={visibleError('productCondition')}
+        label="Estado del producto*"
+        onChange={(value) => {
+          updateField('productCondition', value);
+          handleBlur('productCondition');
+        }}
+        options={PRODUCT_CONDITION_OPTIONS}
+        value={form.productCondition}
       />
 
       <LineTextField
@@ -214,12 +267,23 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
       <LineTextField
         error={visibleError('precioBase')}
         keyboardType="decimal-pad"
-        label="Precio base (ARS)*"
+        label="Precio base*"
         maxLength={12}
         onBlur={() => handleBlur('precioBase')}
         onChangeText={(value) => updateField('precioBase', value.replace(/[^0-9.]/g, ''))}
         placeholder="Ej. 15000"
         value={form.precioBase}
+      />
+
+      <LineSelectField
+        error={visibleError('moneda')}
+        label="Moneda*"
+        onChange={(value) => {
+          updateField('moneda', value);
+          handleBlur('moneda');
+        }}
+        options={CURRENCY_OPTIONS}
+        value={form.moneda}
       />
 
       {isSpecialProduct ? (

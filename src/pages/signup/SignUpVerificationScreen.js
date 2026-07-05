@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   CodeField,
@@ -7,6 +7,7 @@ import {
   useClearByFocusCell,
 } from 'react-native-confirmation-code-field';
 
+import AuthTextField from '../../components/forms/auth/AuthTextField';
 import PrimaryButton from '../../components/forms/controls/PrimaryButton';
 import SignUpProgress from '../../components/signup/SignUpProgress';
 import { colors } from '../../theme/colors';
@@ -15,13 +16,28 @@ import { apiFetch, getApiErrorMessage } from '../../utils/http';
 
 const CELL_COUNT = 6;
 const RESEND_SECONDS = 60;
+const CATEGORY_LABELS = {
+  comun: 'Comun',
+  especial: 'Especial',
+  oro: 'Oro',
+  plata: 'Plata',
+  platino: 'Platino',
+};
+
+function formatCategory(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return CATEGORY_LABELS[key] || value || 'Asignada por Midnight Lace';
+}
 
 export default function SignUpVerificationScreen({ email, onVerified }) {
   const [value, setValue] = useState('');
+  const [emailValue, setEmailValue] = useState(email || '');
   const [error, setError] = useState('');
   const [remainingSeconds, setRemainingSeconds] = useState(RESEND_SECONDS);
   const [message, setMessage] = useState('');
   const [resending, setResending] = useState(false);
+  const [validated, setValidated] = useState(false);
+  const [assignedCategory, setAssignedCategory] = useState('');
   const ref = useBlurOnFulfill({ cellCount: CELL_COUNT, value });
   const [codeFieldProps, getCellOnLayoutHandler] = useClearByFocusCell({
     setValue,
@@ -31,7 +47,7 @@ export default function SignUpVerificationScreen({ email, onVerified }) {
   useEffect(() => {
     if (remainingSeconds <= 0) return undefined;
     const timer = setTimeout(
-      () => setRemainingSeconds((s) => Math.max(s - 1, 0)),
+      () => setRemainingSeconds((seconds) => Math.max(seconds - 1, 0)),
       1000
     );
     return () => clearTimeout(timer);
@@ -41,32 +57,57 @@ export default function SignUpVerificationScreen({ email, onVerified }) {
     setValue(nextValue.replace(/\D/g, '').slice(0, CELL_COUNT));
     setError('');
     setMessage('');
+    setValidated(false);
+    setAssignedCategory('');
   }
 
-  function handleContinue() {
-    if (value.length !== CELL_COUNT) {
-      setError('Ingresá el código de 6 dígitos.');
+  async function handleContinue() {
+    if (!emailValue.trim()) {
+      setError('Ingresa el mail con el que te registraste.');
       return;
     }
-    onVerified?.({ code: value });
+
+    if (value.length !== CELL_COUNT) {
+      setError('Ingresa el codigo de 6 digitos.');
+      return;
+    }
+
+    setError('');
+    try {
+      const result = await apiFetch('/v1/auth/validar-codigo', {
+        method: 'POST',
+        body: { email: emailValue.trim(), codigo: value, tipo: 'registro' },
+        auth: false,
+      });
+      setAssignedCategory(result?.categoria || result?.category || '');
+      setValidated(true);
+      setMessage(
+        `Cuenta aceptada. Categoria asignada: ${formatCategory(
+          result?.categoria || result?.category
+        )}.`
+      );
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No pudimos validar el codigo.'));
+    }
   }
 
   async function handleResend() {
-    if (remainingSeconds > 0 || resending) return;
+    if (remainingSeconds > 0 || resending || !emailValue.trim()) return;
     setResending(true);
     setError('');
     setMessage('');
     try {
       await apiFetch('/v1/auth/reenviar-codigo', {
         method: 'POST',
-        body: { email, tipo: 'registro' },
+        body: { email: emailValue.trim(), tipo: 'registro' },
         auth: false,
       });
       setValue('');
-      setMessage('Te enviamos un código nuevo.');
+      setAssignedCategory('');
+      setMessage('Te enviamos un codigo nuevo.');
       setRemainingSeconds(RESEND_SECONDS);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'No pudimos reenviar el código.'));
+      setError(getApiErrorMessage(err, 'No pudimos reenviar el codigo.'));
     } finally {
       setResending(false);
     }
@@ -76,11 +117,24 @@ export default function SignUpVerificationScreen({ email, onVerified }) {
     <View style={styles.screen}>
       <SignUpProgress currentStep={2} />
 
-      <Text style={styles.title}>Verificá tu correo</Text>
+      <Text style={styles.title}>Setear contrasenia</Text>
       <Text style={styles.description}>
-        Ingresá el código de 6 dígitos que enviamos a{' '}
-        <Text style={styles.email}>{email || 'tu casilla de correo'}</Text>.
+        Ingresa el mail con el que te registraste y el codigo que recibiste por
+        correo cuando tu cuenta fue aceptada.
       </Text>
+
+      <AuthTextField
+        autoComplete="email"
+        keyboardType="email-address"
+        label="Email"
+        onChangeText={(nextEmail) => {
+          setEmailValue(nextEmail);
+          setValidated(false);
+          setAssignedCategory('');
+        }}
+        textContentType="emailAddress"
+        value={emailValue}
+      />
 
       <CodeField
         ref={ref}
@@ -107,33 +161,54 @@ export default function SignUpVerificationScreen({ email, onVerified }) {
         value={value}
       />
 
+      {validated ? (
+        <View style={styles.categoryCard}>
+          <Text style={styles.categoryLabel}>Tu categoria</Text>
+          <Text style={styles.categoryValue}>{formatCategory(assignedCategory)}</Text>
+        </View>
+      ) : null}
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {message ? <Text style={styles.success}>{message}</Text> : null}
 
       <View style={styles.continueButton}>
-        <PrimaryButton
-          disabled={value.length !== CELL_COUNT}
-          onPress={handleContinue}
-        >
-          Continuar
-        </PrimaryButton>
+        {validated ? (
+          <PrimaryButton
+            onPress={() =>
+              onVerified?.({
+                category: assignedCategory,
+                code: value,
+                email: emailValue.trim(),
+              })
+            }
+          >
+            Generar clave
+          </PrimaryButton>
+        ) : (
+          <PrimaryButton
+            disabled={value.length !== CELL_COUNT || !emailValue.trim()}
+            onPress={handleContinue}
+          >
+            Validar codigo
+          </PrimaryButton>
+        )}
       </View>
 
       <Pressable
         accessibilityRole="button"
-        disabled={remainingSeconds > 0}
+        disabled={remainingSeconds > 0 || !emailValue.trim()}
         onPress={handleResend}
         style={styles.resendButton}
       >
         <Text
           style={[
             styles.resendText,
-            remainingSeconds > 0 ? styles.resendTextDisabled : null,
+            remainingSeconds > 0 || !emailValue.trim() ? styles.resendTextDisabled : null,
           ]}
         >
           {remainingSeconds > 0
-            ? `Reenviar código en ${remainingSeconds}s`
-            : 'Reenviar código'}
+            ? `Reenviar codigo en ${remainingSeconds}s`
+            : 'Reenviar codigo'}
         </Text>
       </Pressable>
     </View>
@@ -162,15 +237,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 16,
     lineHeight: 23,
+    marginBottom: 22,
     marginTop: 8,
-  },
-  email: {
-    color: colors.textBurgundy,
-    fontFamily: fonts.semiBold,
   },
   codeField: {
     justifyContent: 'space-between',
-    marginTop: 34,
+    marginTop: 18,
     width: '100%',
   },
   cell: {
@@ -191,6 +263,28 @@ const styles = StyleSheet.create({
   },
   cellFilled: {
     backgroundColor: 'rgba(252, 235, 219, 0.86)',
+  },
+  categoryCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(159, 2, 29, 0.09)',
+    borderColor: colors.burgundy,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  categoryLabel: {
+    color: colors.mutedRose,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  categoryValue: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    lineHeight: 23,
   },
   error: {
     color: colors.burgundy,

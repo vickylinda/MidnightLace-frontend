@@ -33,44 +33,51 @@ const STATUS_STYLES = {
 export default function ProductStatusCard({
   description,
   imageSource,
+  action,
   onPress,
   owner,
+  ownerLabel = 'Publicado por',
   status,
   statusLabel,
+  statusNote,
   title,
 }) {
-  const Container = onPress ? Pressable : View;
+  const BodyContainer = onPress ? Pressable : View;
 
   return (
-    <Container
-      accessibilityRole={onPress ? 'button' : undefined}
-      onPress={onPress}
-      style={
-        onPress
-          ? ({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]
-          : styles.card
-      }
-    >
-      <View style={styles.imageFrame}>
-        {imageSource ? (
-          <Image resizeMode="contain" source={imageSource} style={styles.image} />
-        ) : null}
-      </View>
-
-      <View style={styles.content}>
-        <Text style={styles.title}>{title}</Text>
-        {owner ? <Text style={styles.owner}>Publicado por @{owner}</Text> : null}
-
-        <View style={styles.statusRow}>
-          <Text style={styles.statusPrefix}>Estado:</Text>
-          <View style={[styles.badge, STATUS_STYLES[status]]}>
-            <Text style={styles.badgeText}>{statusLabel}</Text>
-          </View>
+    <View style={styles.card}>
+      <BodyContainer
+        accessibilityRole={onPress ? 'button' : undefined}
+        onPress={onPress}
+        style={
+          onPress
+            ? ({ pressed }) => [styles.cardBody, pressed ? styles.cardPressed : null]
+            : styles.cardBody
+        }
+      >
+        <View style={styles.imageFrame}>
+          {imageSource ? (
+            <Image resizeMode="contain" source={imageSource} style={styles.image} />
+          ) : null}
         </View>
 
-        {description ? <Text style={styles.description}>{description}</Text> : null}
-      </View>
-    </Container>
+        <View style={styles.content}>
+          <Text style={styles.title}>{title}</Text>
+          {owner ? <Text style={styles.owner}>{ownerLabel} {owner}</Text> : null}
+
+          <View style={styles.statusRow}>
+            <Text style={styles.statusPrefix}>Estado:</Text>
+            <View style={[styles.badge, STATUS_STYLES[status]]}>
+              <Text style={styles.badgeText}>{statusLabel}</Text>
+            </View>
+          </View>
+
+          {statusNote ? <Text style={styles.statusNote}>{statusNote}</Text> : null}
+          {description ? <Text style={styles.description}>{description}</Text> : null}
+        </View>
+      </BodyContainer>
+      {action ? <View style={styles.action}>{action}</View> : null}
+    </View>
   );
 }
 
@@ -79,11 +86,14 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     backgroundColor: 'rgba(242, 211, 200, 0.62)',
     borderRadius: 8,
-    flexDirection: 'row',
     maxWidth: 370,
     minHeight: 176,
     overflow: 'hidden',
     padding: 12,
+    width: '100%',
+  },
+  cardBody: {
+    flexDirection: 'row',
     width: '100%',
   },
   cardPressed: {
@@ -152,5 +162,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 13,
+  },
+  statusNote: {
+    color: colors.cocoa,
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 8,
+  },
+  action: {
+    marginTop: 12,
   },
 });

@@ -26,6 +26,10 @@ export function clearSession() {
   AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
 }
 
+export function hasRole(role) {
+  return Boolean(_session?.roles?.includes(role));
+}
+
 export async function loadSession() {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEY);

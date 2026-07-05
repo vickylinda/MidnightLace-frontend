@@ -12,7 +12,6 @@ import {
   validatePasswordConfirmation,
 } from '../../utils/authValidation';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
-import { setSession } from '../../utils/session';
 
 export default function SignUpFinalScreen({ code, email, onSubmitSuccess }) {
   const [password, setPassword] = useState('');
@@ -49,12 +48,11 @@ export default function SignUpFinalScreen({ code, email, onSubmitSuccess }) {
 
     setLoading(true);
     try {
-      const session = await apiFetch('/v1/auth/confirmar', {
+      await apiFetch('/v1/auth/confirmar', {
         method: 'POST',
         body: { codigo: code, clave: password, tipo: 'registro' },
         auth: false,
       });
-      setSession(session);
       onSubmitSuccess?.();
     } catch (error) {
       const msg = getApiErrorMessage(error, 'No pudimos confirmar el registro.');

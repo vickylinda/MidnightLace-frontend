@@ -27,7 +27,7 @@ function HomeIcon({ color }) {
   );
 }
 
-function AuctionsIcon({ color }) {
+export function AuctionsIcon({ color }) {
   return (
     <Svg width={25} height={25} viewBox="0 0 32 32" fill="none">
       <Path
@@ -66,7 +66,21 @@ function ActivityIcon({ color }) {
   );
 }
 
-function ProfileIcon({ color }) {
+export function VerifyIcon({ color }) {
+  return (
+    <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5 12.4L9.4 16.8L19.2 7"
+        stroke={color}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.8}
+      />
+    </Svg>
+  );
+}
+
+export function ProfileIcon({ color }) {
   return (
     <Svg width={25} height={25} viewBox="0 0 24 24" fill="none">
       <Circle cx={12} cy={8.2} r={3.6} stroke={color} strokeWidth={2.2} />
@@ -82,11 +96,16 @@ function ProfileIcon({ color }) {
 
 export default function BottomNavigation({
   activeItem = 'inicio',
+  hiddenItemIds = [],
   isInteractive = true,
+  items = navItems,
   onItemPress,
 }) {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, BOTTOM_NAV_MIN_BOTTOM_PADDING);
+  const visibleNavItems = items.filter(
+    (item) => !hiddenItemIds.includes(item.id)
+  );
 
   return (
     <View
@@ -100,7 +119,7 @@ export default function BottomNavigation({
       ]}
     >
       <View style={styles.container}>
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = item.id === activeItem;
           const color = isActive ? colors.burgundy : colors.cream;

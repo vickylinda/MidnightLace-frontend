@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -14,6 +14,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import PrimaryButton from '../../components/forms/controls/PrimaryButton';
 import ProductStatusCard from '../../components/products/ProductStatusCard';
+import { useNotifications } from '../../context/NotificationsContext';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl } from '../../utils/config';
@@ -28,7 +29,16 @@ const STATUS_MAP = {
   vendido: { status: 'sold', statusLabel: 'vendido' },
 };
 
-const EMPTY_PRODUCTS_GIF_URL = 'https://media1.tenor.com/m/FmgqXydqf_UAAAAC/tantrum.gif';
+const PRODUCT_NOTIFICATION_TYPES = new Set([
+  'producto_aceptado',
+  'producto_en_subasta',
+  'producto_rechazado',
+  'producto_vendido',
+  'producto_no_vendido',
+  'devolucion_producto',
+]);
+
+const EMPTY_PRODUCTS_GIF_URL = 'https://media.tenor.com/cUpWnIdngvwAAAAC/sad-happy.gif';
 
 function CloseIcon() {
   return (
@@ -50,6 +60,42 @@ const STATUS_DETAILS = {
   auction: 'Actualmente disponible para pujas.',
   rejected: 'No cumple con los criterios de aceptación.',
   sold: 'Subastado y vendido exitosamente.',
+};
+
+const OWNER_STATUS_DETAILS = {
+  pending: 'La empresa esta revisando la documentacion, fotos y datos del bien.',
+  confirming: 'El subastador lo agrego a un catalogo. Tenes que aceptar o rechazar las condiciones para avanzar.',
+  assigned: 'El producto fue aprobado y esta disponible para que el subastador lo asigne a otra subasta.',
+  auction: 'Aceptaste las condiciones y el producto esta participando en la subasta.',
+  rejected: 'La empresa rechazo el producto. Este flujo termina aca.',
+  sold: 'El producto fue subastado y vendido exitosamente.',
+};
+
+const AUCTIONEER_STATUS_DETAILS = {
+  pending: 'La empresa todavia esta revisando el producto.',
+  confirming: 'El producto ya esta en un catalogo y espera la respuesta del duenio sobre las condiciones.',
+  assigned: 'Producto aprobado en tu pool. Podes sumarlo a un catalogo programado.',
+  auction: 'El duenio acepto las condiciones y el producto ya puede subastarse.',
+  rejected: 'La empresa rechazo el producto. No puede incorporarse a subastas.',
+  sold: 'El producto fue vendido en subasta.',
+};
+
+const OWNER_STATUS_NOTES = {
+  pending: 'Revision inicial',
+  confirming: 'Accion requerida: revisar condiciones',
+  assigned: 'Esperando asignacion a catalogo',
+  auction: 'Condiciones aceptadas',
+  rejected: 'Finalizado por rechazo',
+  sold: 'Finalizado por venta',
+};
+
+const AUCTIONEER_STATUS_NOTES = {
+  pending: 'Pendiente de revision',
+  confirming: 'Esperando respuesta del duenio',
+  assigned: 'Disponible para catalogar',
+  auction: 'Listo para subasta',
+  rejected: 'No disponible',
+  sold: 'Venta completada',
 };
 
 const STATUS_BADGE_STYLES = {
@@ -133,42 +179,180 @@ function getProductPhotos(producto) {
   });
 }
 
-function mapProduct(producto) {
+function cleanProductText(value) {
+  const text = String(value ?? '').trim();
+  return text && text.toLowerCase() !== 'no posee' ? text : '';
+}
+
+function splitCatalogDescription(producto, isSubastador = false) {
+  const catalogText = cleanProductText(
+    producto.descripcionCatalogo ?? producto.descripcion_catalogo
+  );
+  const catalogLines = catalogText
+    .split('\n')
+    .map((line) => cleanProductText(line))
+    .filter(Boolean);
+
+  const completeDescriptionLines = cleanProductText(
+    producto.descripcionCompleta ?? producto.descripcion_completa
+  )
+    .split('\n')
+    .map((line) => cleanProductText(line))
+    .filter(Boolean);
+
+  const title =
+    cleanProductText(producto.nombre) ||
+    cleanProductText(producto.titulo) ||
+    cleanProductText(producto.title) ||
+    cleanProductText(producto.name) ||
+    catalogLines[0] ||
+    ((producto.identificador ?? producto.id) ? `Producto #${producto.identificador ?? producto.id}` : 'Producto sin nombre');
+
+  const shortDescription =
+    cleanProductText(producto.descripcionBreve ?? producto.descripcion_breve) ||
+    (catalogLines.length > 1 ? catalogLines.slice(1).join('\n').trim() : catalogLines[0]) ||
+    (isSubastador ? completeDescriptionLines[0] : null);
+
+  return {
+    title,
+    shortDescription,
+  };
+}
+
+function formatPrice(value, currency) {
+  const price = Number(String(value ?? '').replace(',', '.'));
+
+  if (!Number.isFinite(price)) {
+    return null;
+  }
+
+  const currencyCode = String(currency || 'ARS').toUpperCase();
+
+  try {
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: currencyCode,
+      maximumFractionDigits: price % 1 === 0 ? 0 : 2,
+    }).format(price);
+  } catch {
+    return `${currencyCode} ${price}`;
+  }
+}
+
+function parseArtisticDetails(producto) {
+  const rawDetails =
+    producto.detalleArtistico ??
+    producto.detallesArtisticos ??
+    producto.detalleArtisticoProducto ??
+    null;
+
+  if (!rawDetails) {
+    return [];
+  }
+
+  let details = rawDetails;
+
+  if (typeof rawDetails === 'string') {
+    try {
+      details = JSON.parse(rawDetails);
+    } catch {
+      return [];
+    }
+  }
+
+  return [
+    { label: 'Artista o diseñador', value: details.artista },
+    { label: 'Fecha o período', value: details.fechaObra },
+    { label: 'Historia y procedencia', value: details.historia },
+  ].filter((item) => item.value);
+}
+
+function appendArtisticDetails(description, artisticDetails) {
+  if (artisticDetails.length === 0) {
+    return description;
+  }
+
+  const detailText = artisticDetails
+    .map((item) => `${item.label}: ${item.value}`)
+    .join('\n');
+
+  return [description, detailText].filter(Boolean).join('\n\n');
+}
+
+function mapProduct(producto, isSubastador = false) {
   const mapped = STATUS_MAP[producto.estadoProducto] ?? {
     status: 'pending',
     statusLabel: producto.estadoProducto,
   };
-  const lines = String(producto.descripcionCompleta ?? '').split('\n');
-  const title = String(producto.nombre ?? lines[0] ?? '').slice(0, 60);
-  const description = lines.slice(1).join('\n').trim() || null;
+
+  const { title, shortDescription } = splitCatalogDescription(producto, isSubastador);
+
+  const baseCompleteDescription =
+    String(producto.descripcionCompleta ?? producto.descripcion_completa ?? '').trim() || null;
+  const artisticDetails = parseArtisticDetails(producto);
+  const completeDescription = appendArtisticDetails(
+    baseCompleteDescription,
+    artisticDetails
+  );
+
   const imageSources = getProductPhotos(producto);
   const imageSource = imageSources[0] ?? null;
-  const ownerValue = producto.publicadoPor ?? producto.owner ?? producto.usuario ?? producto.vendedor;
+
+  const ownerValue =
+    producto.publicadoPor ??
+    producto.owner ??
+    producto.usuario ??
+    producto.vendedor;
+
   const owner =
     typeof ownerValue === 'string'
       ? ownerValue
-      : ownerValue?.username ?? ownerValue?.nombreUsuario ?? ownerValue?.nombre ?? null;
+      : ownerValue?.username ??
+        ownerValue?.nombreUsuario ??
+        ownerValue?.nombre ??
+        null;
+  const ownerId = producto.duenio ?? producto.idDuenio ?? producto.dueno ?? null;
+
+  const rawId = producto.identificador ?? null;
+  const ownerDisplay = owner
+    ? `@${String(owner).replace(/^@/, '')}`
+    : ownerId ? `#${ownerId}` : null;
 
   return {
-    description,
-    id: String(producto.identificador ?? producto.id ?? title),
+    artisticDetails,
+    completeDescription,
+    description: shortDescription,
+    id: String(rawId ?? producto.id ?? title),
+    rawId,
     imageSource,
     imageSources,
-    owner,
+    owner: ownerDisplay,
+    ownerLabel: 'Publicado por',
+    priceLabel: formatPrice(producto.precioBase, producto.moneda),
+    rejectionReason:
+      cleanProductText(producto.motivoRechazo ?? producto.motivo_rechazo) || null,
+    insurance: producto.seguro || null,
+    deposit: producto.deposito || null,
+    shortDescription,
     status: mapped.status,
     statusLabel: mapped.statusLabel,
-    title: title || 'Producto sin nombre',
+    title: title.slice(0, 60) || 'Producto sin nombre',
   };
 }
 
-function ProductDetailsModal({ product, onClose }) {
+function ProductDetailsModal({ product, onClose, onReviewConditions, isSubastador = false }) {
   const { width } = useWindowDimensions();
 
   if (!product) {
     return null;
   }
 
-  const detail = STATUS_DETAILS[product.status] ?? 'Estado registrado por el sistema.';
+  const detailMap = isSubastador ? AUCTIONEER_STATUS_DETAILS : OWNER_STATUS_DETAILS;
+  const defaultDetail = detailMap[product.status] ?? STATUS_DETAILS[product.status] ?? 'Estado registrado por el sistema.';
+  const detail =
+    product.status === 'rejected' && product.rejectionReason
+      ? `Motivo: ${product.rejectionReason}`
+      : defaultDetail;
   const statusTitle = product.statusLabel
     ? product.statusLabel.charAt(0).toUpperCase() + product.statusLabel.slice(1)
     : 'Estado';
@@ -244,13 +428,51 @@ function ProductDetailsModal({ product, onClose }) {
             </View>
 
             {product.owner ? (
-              <Text style={styles.modalMeta}>Publicado por @{product.owner}</Text>
+              <Text style={styles.modalMeta}>{product.ownerLabel} {product.owner}</Text>
             ) : null}
-            {product.description ? (
-              <View style={styles.modalDescriptionBox}>
-                <Text style={styles.modalDescriptionTitle}>Descripcion</Text>
-                <Text style={styles.modalDescription}>{product.description}</Text>
+            {product.priceLabel ? (
+              <View style={styles.modalPriceRow}>
+                <Text style={styles.modalPriceLabel}>Precio base:</Text>
+                <Text style={styles.modalPriceValue}>{product.priceLabel}</Text>
               </View>
+            ) : null}
+
+            {product.insurance ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Seguro</Text>
+                <Text style={styles.modalDescription}>
+                  {product.insurance.compania || '-'} - Poliza {product.insurance.nroPoliza || '-'} - {product.insurance.importe || '-'}
+                </Text>
+              </View>
+            ) : null}
+
+            {product.deposit ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Deposito asignado</Text>
+                <Text style={styles.modalDescription}>
+                  {product.deposit.nombre || '-'} - {product.deposit.direccion || '-'}
+                </Text>
+              </View>
+            ) : null}
+
+            {product.shortDescription ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Descripción breve</Text>
+                <Text style={styles.modalDescription}>{product.shortDescription}</Text>
+              </View>
+            ) : null}
+
+            {product.completeDescription ? (
+              <View style={styles.modalDescriptionBox}>
+                <Text style={styles.modalDescriptionTitle}>Descripción completa</Text>
+                <Text style={styles.modalDescription}>{product.completeDescription}</Text>
+              </View>
+            ) : null}
+
+            {onReviewConditions ? (
+              <PrimaryButton onPress={onReviewConditions} style={styles.modalReviewButton}>
+                Revisar condiciones
+              </PrimaryButton>
             ) : null}
           </ScrollView>
         </View>
@@ -259,7 +481,13 @@ function ProductDetailsModal({ product, onClose }) {
   );
 }
 
-function EmptyProductsNotice({ onCreateProduct, onGoHome }) {
+function EmptyProductsNotice({
+  canCreateProduct,
+  isSubastador,
+  onCreateProduct,
+  onGoAuctions,
+  onGoHome,
+}) {
   return (
     <View style={styles.emptyCard}>
       <Image
@@ -270,34 +498,128 @@ function EmptyProductsNotice({ onCreateProduct, onGoHome }) {
       />
 
       <Text style={styles.emptyTitle}>
-        ups! parece que no publicaste ningun producto todavía...
+        {isSubastador
+          ? 'ups! todavia no tenes productos asignados...'
+          : 'ups! parece que no publicaste ningun producto todavía...'}
       </Text>
-      <Text style={styles.emptyMessage}>pero nunca es tarde!</Text>
+      <Text style={styles.emptyMessage}>
+        {isSubastador ? 'cuando te asignen bienes, los vas a ver aca.' : 'pero nunca es tarde!'}
+      </Text>
 
       <View style={styles.emptyActions}>
-        <PrimaryButton onPress={onCreateProduct} style={styles.emptyButton}>
-          Crear producto
-        </PrimaryButton>
-        <PrimaryButton onPress={onGoHome} style={styles.emptyButton}>
-          Volver a home
-        </PrimaryButton>
+        {isSubastador ? (
+          <PrimaryButton onPress={onGoAuctions} style={styles.emptyButton}>
+            Ir a subastas
+          </PrimaryButton>
+        ) : canCreateProduct ? (
+          <PrimaryButton onPress={onCreateProduct} style={styles.emptyButton}>
+            Crear producto
+          </PrimaryButton>
+        ) : (
+          <PrimaryButton onPress={onGoHome} style={styles.emptyButton}>
+            Volver a home
+          </PrimaryButton>
+        )}
       </View>
     </View>
   );
 }
 
-export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
+function ConditionsModal({ state, onAccept, onReject, onClose }) {
+  const { product, data, loading: cLoading, error: cError, submitting } = state;
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent
+      visible={Boolean(product)}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Condiciones de subasta</Text>
+            <Pressable
+              accessibilityLabel="Cerrar"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={styles.modalCloseButton}
+            >
+              <CloseIcon />
+            </Pressable>
+          </View>
+
+          {cLoading ? (
+            <ActivityIndicator color={colors.burgundy} style={styles.conditionsSpinner} />
+          ) : cError ? (
+            <Text style={styles.error}>{cError}</Text>
+          ) : data ? (
+            <>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Precio base:</Text>
+                <Text style={styles.conditionValue}>${data.precioBase}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Comisión:</Text>
+                <Text style={styles.conditionValue}>${data.comision}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Fecha:</Text>
+                <Text style={styles.conditionValue}>{data.fecha ?? '—'}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Hora:</Text>
+                <Text style={styles.conditionValue}>{data.hora ?? '—'}</Text>
+              </View>
+              <View style={styles.conditionRow}>
+                <Text style={styles.conditionLabel}>Lugar:</Text>
+                <Text style={styles.conditionValue}>{data.lugar ?? '—'}</Text>
+              </View>
+              <Text style={styles.conditionHint}>
+                Si aceptas, el producto pasa a subasta. Si rechazas, vuelve al pool asignado para otra oportunidad.
+              </Text>
+              <View style={styles.conditionActions}>
+                <PrimaryButton onPress={onAccept} disabled={submitting} style={styles.conditionAccept}>
+                  Aceptar
+                </PrimaryButton>
+                <PrimaryButton onPress={onReject} disabled={submitting} style={styles.conditionReject}>
+                  Rechazar
+                </PrimaryButton>
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const EMPTY_CONDITIONS = { product: null, data: null, loading: false, error: null, submitting: false };
+
+export default function ProductCatalogScreen({
+  canCreateProduct = false,
+  isSubastador = false,
+  onCreateProduct,
+  onGoAuctions,
+  onGoHome,
+}) {
+  const { notifications } = useNotifications() ?? {};
+  const lastProductNotificationIdRef = useRef(null);
   const [products, setProducts] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [conditionsState, setConditionsState] = useState(EMPTY_CONDITIONS);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch('/v1/productos?cantidad=50');
-      setProducts((data.datos ?? []).map(mapProduct));
+      const endpoint = isSubastador
+        ? '/v1/subastador/productos?cantidad=50'
+        : '/v1/productos?cantidad=50';
+      const data = await apiFetch(endpoint);
+      setProducts((data.datos ?? []).map((producto) => mapProduct(producto, isSubastador)));
     } catch (err) {
       const message = getApiErrorMessage(err, 'No pudimos cargar tus productos.');
 
@@ -310,17 +632,68 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSubastador]);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
+  useEffect(() => {
+    const productNotification = (notifications ?? []).reduce((latest, notification) => {
+      if (!PRODUCT_NOTIFICATION_TYPES.has(notification.tipo)) {
+        return latest;
+      }
+
+      if (!latest || notification.identificador > latest.identificador) {
+        return notification;
+      }
+
+      return latest;
+    }, null);
+
+    if (!productNotification || productNotification.identificador === lastProductNotificationIdRef.current) {
+      return;
+    }
+
+    lastProductNotificationIdRef.current = productNotification.identificador;
+    fetchProducts();
+  }, [fetchProducts, notifications]);
+
+  async function openConditions(product) {
+    setConditionsState({ product, data: null, loading: true, error: null, submitting: false });
+    try {
+      const data = await apiFetch(`/v1/productos/${product.rawId}/condiciones`);
+      setConditionsState((s) => ({ ...s, data, loading: false }));
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'No pudimos cargar las condiciones.');
+      setConditionsState((s) => ({ ...s, error: msg, loading: false }));
+    }
+  }
+
+  async function submitConditions(accepts) {
+    const { product } = conditionsState;
+    if (!product) return;
+    setConditionsState((s) => ({ ...s, submitting: true, error: null }));
+    try {
+      await apiFetch(`/v1/productos/${product.rawId}/aceptar-condiciones`, {
+        method: 'PATCH',
+        body: { acepta: accepts },
+      });
+      setConditionsState(EMPTY_CONDITIONS);
+      fetchProducts();
+    } catch (err) {
+      const msg = getApiErrorMessage(err, 'No pudimos procesar tu respuesta.');
+      setConditionsState((s) => ({ ...s, submitting: false, error: msg }));
+    }
+  }
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Estado de los productos</Text>
       <Text style={styles.subtitle}>
-        Seguí el proceso de evaluación y asignación de los bienes que publicaste.
+        {isSubastador
+          ? 'Segui el pool asignado, las confirmaciones pendientes y el resultado de cada subasta.'
+          : 'Segui la evaluacion, confirma condiciones cuando te notifiquen y consulta el resultado final.'}
       </Text>
 
       {loading ? (
@@ -329,7 +702,10 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
         <Text style={styles.error}>{error}</Text>
       ) : products.length === 0 ? (
         <EmptyProductsNotice
+          canCreateProduct={canCreateProduct}
+          isSubastador={isSubastador}
           onCreateProduct={onCreateProduct}
+          onGoAuctions={onGoAuctions}
           onGoHome={onGoHome}
         />
       ) : (
@@ -339,6 +715,17 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
               key={product.id}
               {...product}
               onPress={() => setSelectedProduct(product)}
+              statusNote={(isSubastador ? AUCTIONEER_STATUS_NOTES : OWNER_STATUS_NOTES)[product.status]}
+              action={
+                !isSubastador && product.status === 'confirming' ? (
+                  <PrimaryButton
+                    onPress={() => openConditions(product)}
+                    style={styles.reviewButton}
+                  >
+                    Revisar condiciones
+                  </PrimaryButton>
+                ) : null
+              }
             />
           ))}
         </View>
@@ -346,7 +733,19 @@ export default function ProductCatalogScreen({ onCreateProduct, onGoHome }) {
 
       <ProductDetailsModal
         onClose={() => setSelectedProduct(null)}
+        isSubastador={isSubastador}
         product={selectedProduct}
+        onReviewConditions={!isSubastador && selectedProduct?.status === 'confirming' ? () => {
+          setSelectedProduct(null);
+          openConditions(selectedProduct);
+        } : undefined}
+      />
+
+      <ConditionsModal
+        state={conditionsState}
+        onAccept={() => submitConditions(true)}
+        onReject={() => submitConditions(false)}
+        onClose={() => setConditionsState(EMPTY_CONDITIONS)}
       />
     </View>
   );
@@ -592,4 +991,74 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 25,
   },
+  modalReviewButton: {
+    marginTop: 16,
+    width: '100%',
+  },
+  reviewButton: {
+    height: 42,
+    width: '100%',
+  },
+  conditionsSpinner: {
+    marginVertical: 24,
+  },
+  conditionRow: {
+    alignItems: 'center',
+    columnGap: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  conditionLabel: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  conditionValue: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  conditionHint: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  conditionActions: {
+    flexDirection: 'row',
+    columnGap: 12,
+    justifyContent: 'center',
+    marginTop: 22,
+  },
+  conditionAccept: {
+    width: 128,
+  },
+  conditionReject: {
+    backgroundColor: colors.mutedRose,
+    width: 128,
+  },
+  modalPriceRow: {
+  alignItems: 'center',
+  columnGap: 8,
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  marginTop: 14,
+},
+modalPriceLabel: {
+  color: colors.textBurgundy,
+  fontFamily: fonts.bold,
+  fontSize: 15,
+  lineHeight: 19,
+},
+modalPriceValue: {
+  color: colors.cocoa,
+  fontFamily: fonts.semiBold,
+  fontSize: 15,
+  lineHeight: 19,
+},
 });

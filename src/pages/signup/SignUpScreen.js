@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AddressAutocompleteField from '../../components/forms/address/AddressAutocompleteField';
 import AddressMapPreview from '../../components/forms/address/AddressMapPreview';
@@ -127,12 +127,31 @@ export default function SignUpScreen({ onSubmitSuccess }) {
   );
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
+  const [submittedEmail, setSubmittedEmail] = useState('');
+  const [redirectSeconds, setRedirectSeconds] = useState(10);
 
   useEffect(() => {
     apiFetch('/v1/paises?cantidad=100', { auth: false })
       .then((data) => setCountries(data.datos ?? []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!submittedEmail) {
+      return undefined;
+    }
+
+    if (redirectSeconds <= 0) {
+      onSubmitSuccess?.({ email: submittedEmail, pendingApproval: true });
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      setRedirectSeconds((seconds) => seconds - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [onSubmitSuccess, redirectSeconds, submittedEmail]);
 
   useEffect(() => {
     const country = findCountryByName(countries, address.country);
@@ -237,6 +256,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
       formData.append('codigoPostal', address.postalCode);
       formData.append('localidad', address.locality);
       formData.append('ciudad', address.province);
+      formData.append('codigoPostal', address.postalCode);
       formData.append('idPais', String(selectedCountryId));
       if (address.apartment) {
         formData.append('departamento', address.apartment);
@@ -260,17 +280,43 @@ export default function SignUpScreen({ onSubmitSuccess }) {
         auth: false,
       });
 
-      if (!result.aprobado) {
+      if (!result?.email) {
         setApiError(result.mensaje);
         return;
       }
 
-      onSubmitSuccess?.({ email, categoria: result.categoria });
+      setSubmittedEmail(email);
+      setRedirectSeconds(10);
     } catch (error) {
       setApiError(getApiErrorMessage(error, 'No pudimos completar el registro.'));
     } finally {
       setLoading(false);
     }
+  }
+
+  if (submittedEmail) {
+    return (
+      <View style={styles.screen}>
+        <Text style={styles.title}>Solicitud enviada</Text>
+        <View style={styles.pendingCard}>
+          <Text style={styles.pendingTitle}>Estamos revisando tus datos</Text>
+          <Text style={styles.pendingText}>
+            Si tu cuenta es aceptada, vas a recibir un mail con el codigo para
+            setear tu contrasenia. Si es rechazada, tambien te vamos a avisar
+            por mail.
+          </Text>
+          <Text style={styles.pendingText}>
+            Te redirigimos al login en {redirectSeconds}s.
+          </Text>
+          <Pressable
+            onPress={() => onSubmitSuccess?.({ email: submittedEmail, pendingApproval: true })}
+            style={styles.loginNowButton}
+          >
+            <Text style={styles.loginNowText}>Ir al login ahora</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -505,5 +551,42 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 8,
     textAlign: 'center',
+  },
+  pendingCard: {
+    backgroundColor: 'rgba(242, 211, 200, 0.55)',
+    borderColor: 'rgba(159, 2, 29, 0.22)',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 20,
+  },
+  pendingTitle: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  pendingText: {
+    color: colors.cocoa,
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 12,
+  },
+  loginNowButton: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 999,
+    borderWidth: 1,
+    minHeight: 42,
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingHorizontal: 18,
+  },
+  loginNowText: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.semiBold,
+    fontSize: 15,
   },
 });

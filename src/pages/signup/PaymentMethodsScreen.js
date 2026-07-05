@@ -853,7 +853,7 @@ export default function PaymentMethodsScreen({
     } else if (nextMethod === 'check') {
       setCheckData({
         ...INITIAL_CHECK,
-        amount: String(detail.montoGarantizado || ''),
+        amount: String(detail.montoDisponible ?? detail.montoGarantizado ?? ''),
         amountCurrency: initialPayment.moneda || 'ARS',
         emissionDate: formatBackendShortDate(detail.fechaEntrega),
       });
