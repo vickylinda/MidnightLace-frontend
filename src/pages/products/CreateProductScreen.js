@@ -157,10 +157,10 @@ export default function CreateProductScreen({ onSubmitSuccess }) {
       formData.append('declaracionPropiedad', String(legalDeclaration));
       formData.append('precioBase', String(parseFloat(form.precioBase)));
       formData.append('moneda', form.moneda);
-      formData.append('estadoProducto', form.productCondition);
+      formData.append('estado', form.productCondition);
 
       const imageValues = await Promise.all(
-        images.slice(0, 8).map(async (image) => {
+        images.slice(0, 10).map(async (image) => {
           if (Platform.OS === 'web') {
             const res = await fetch(image.uri);
             const blob = await res.blob();

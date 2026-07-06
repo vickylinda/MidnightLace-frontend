@@ -12,6 +12,7 @@ import { fonts } from '../theme/fonts';
 import { resolveApiAssetUrl } from '../utils/config';
 import { apiFetch, getApiErrorMessage } from '../utils/http';
 import { toUploadValue } from '../services/profileApi';
+import { formatMoney } from '../utils/money';
 
 const CATEGORIAS = [
   { label: 'Común', value: 'comun' },
@@ -21,27 +22,14 @@ const CATEGORIAS = [
   { label: 'Platino', value: 'platino' },
 ];
 
-const MONEDAS = [
-  { label: 'Pesos (ARS)', value: 'ARS' },
-  { label: 'Dólares (USD)', value: 'USD' },
-];
-
-const SINO = [
-  { label: 'Sí', value: 'si' },
-  { label: 'No', value: 'no' },
-];
-
 const INITIAL_FORM = {
   nombre: '',
   fecha: '',
   hora: '',
   categoria: '',
-  moneda: '',
   duracionItemMinutos: '',
   ubicacion: '',
-  capacidadAsistentes: '',
-  tieneDeposito: '',
-  seguridadPropia: '',
+  destacada: false,
 };
 
 function UploadIcon() {
@@ -150,10 +138,19 @@ function CloseIcon() {
   );
 }
 
-function getMinFecha() {
-  const d = new Date();
-  d.setDate(d.getDate() + 10);
-  return d.toISOString().split('T')[0];
+function CheckIcon() {
+  return (
+    <Svg height={14} viewBox="0 0 16 16" width={14}>
+      <Path
+        d="M3.2 8.2L6.4 11.4L12.8 4.6"
+        fill="none"
+        stroke={colors.white}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.2}
+      />
+    </Svg>
+  );
 }
 
 function parseFecha(str) {
@@ -275,18 +272,7 @@ function getProductPhotos(producto) {
 }
 
 function formatPrice(value, currency) {
-  const price = Number(String(value ?? '').replace(',', '.'));
-  if (!Number.isFinite(price)) return null;
-
-  try {
-    return new Intl.NumberFormat('es-AR', {
-      currency: String(currency || 'ARS').toUpperCase(),
-      maximumFractionDigits: price % 1 === 0 ? 0 : 2,
-      style: 'currency',
-    }).format(price);
-  } catch {
-    return `${currency || 'ARS'} ${price}`;
-  }
+  return formatMoney(value, currency, { emptyValue: null });
 }
 
 function getSuggestedCommission(value) {
@@ -516,7 +502,6 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
   const [apiError, setApiError] = useState('');
 
   const errors = useMemo(() => {
-    const minFecha = getMinFecha();
     const fechaISO = parseFecha(form.fecha);
     const horaStr = parseHora(form.hora);
     const duracion = parseInt(form.duracionItemMinutos, 10);
@@ -526,7 +511,6 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
       fecha: (() => {
         if (!form.fecha.trim()) return 'Completá la fecha.';
         if (!fechaISO) return 'Formato válido: DD/MM/AAAA o AAAA-MM-DD.';
-        if (fechaISO < minFecha) return 'La fecha debe ser al menos 10 días a partir de hoy.';
         return '';
       })(),
       hora: (() => {
@@ -535,7 +519,6 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
         return '';
       })(),
       categoria: requiredError(form.categoria, 'la categoría'),
-      moneda: requiredError(form.moneda, 'la moneda'),
       ubicacion: requiredError(form.ubicacion, 'la ubicación'),
       duracionItemMinutos: (() => {
         if (!form.duracionItemMinutos.trim()) return 'Completá la duración por ítem.';
@@ -611,16 +594,10 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
     body.append('fecha', parseFecha(form.fecha));
     body.append('hora', parseHora(form.hora));
     body.append('categoria', form.categoria);
-    body.append('moneda', form.moneda);
     body.append('duracionItemMinutos', String(parseInt(form.duracionItemMinutos, 10)));
     body.append('ubicacion', form.ubicacion.trim());
+    body.append('destacada', form.destacada ? 'true' : 'false');
 
-    if (form.capacidadAsistentes.trim()) {
-      const n = parseInt(form.capacidadAsistentes, 10);
-      if (!isNaN(n)) body.append('capacidadAsistentes', String(n));
-    }
-    if (form.tieneDeposito) body.append('tieneDeposito', form.tieneDeposito);
-    if (form.seguridadPropia) body.append('seguridadPropia', form.seguridadPropia);
     if (coverImage) {
       const upload = await toUploadValue(coverImage, 'portada-subasta.jpg');
       if (upload) body.append('fotoPortada', upload);
@@ -708,8 +685,6 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
       {step === 1 ? (
         <>
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Datos obligatorios</Text>
-
         <LineTextField
           error={showError('nombre')}
           label="Nombre"
@@ -751,15 +726,6 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
           value={form.categoria}
         />
 
-        <LineSelectField
-          error={showError('moneda')}
-          label="Moneda"
-          onBlur={() => handleBlur('moneda')}
-          onChange={(v) => handleChange('moneda', v)}
-          options={MONEDAS}
-          placeholder="Seleccioná la moneda"
-          value={form.moneda}
-        />
 
         <LineTextField
           error={showError('duracionItemMinutos')}
@@ -779,36 +745,24 @@ export default function CreateAuctionScreen({ onSubmitSuccess }) {
           value={form.ubicacion}
         />
 
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Datos adicionales</Text>
-
         <AuctionCoverPicker cover={coverImage} onChange={setCoverImage} />
 
-        <LineTextField
-          keyboardType="numeric"
-          label="Capacidad de asistentes"
-          onChangeText={(v) => handleChange('capacidadAsistentes', v)}
-          placeholder="Ej: 200"
-          value={form.capacidadAsistentes}
-        />
-
-        <LineSelectField
-          label="¿Tiene depósito?"
-          onChange={(v) => handleChange('tieneDeposito', v)}
-          options={SINO}
-          placeholder="Seleccioná"
-          value={form.tieneDeposito}
-        />
-
-        <LineSelectField
-          label="¿Seguridad propia?"
-          onChange={(v) => handleChange('seguridadPropia', v)}
-          options={SINO}
-          placeholder="Seleccioná"
-          value={form.seguridadPropia}
-        />
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: form.destacada }}
+          onPress={() => handleChange('destacada', !form.destacada)}
+          style={styles.featuredOption}
+        >
+          <View style={[styles.checkbox, form.destacada ? styles.checkboxChecked : null]}>
+            {form.destacada ? <CheckIcon /> : null}
+          </View>
+          <View style={styles.featuredOptionText}>
+            <Text style={styles.featuredOptionTitle}>Mostrar esta subasta en la home</Text>
+            <Text style={styles.featuredOptionHelper}>
+              Si la marcas, reemplaza la subasta destacada actual.
+            </Text>
+          </View>
+        </Pressable>
       </View>
 
       {apiError ? <Text style={styles.apiError}>{apiError}</Text> : null}
@@ -1228,6 +1182,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 17,
     marginTop: 8,
+  },
+  featuredOption: {
+    alignItems: 'flex-start',
+    borderColor: 'rgba(159, 2, 29, 0.2)',
+    borderRadius: 8,
+    borderWidth: 1,
+    columnGap: 12,
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  checkbox: {
+    alignItems: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    height: 22,
+    justifyContent: 'center',
+    marginTop: 2,
+    width: 22,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.burgundy,
+  },
+  featuredOptionText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  featuredOptionTitle: {
+    color: colors.textBurgundy,
+    fontFamily: fonts.semiBold,
+    fontSize: 15,
+    lineHeight: 19,
+  },
+  featuredOptionHelper: {
+    color: colors.mutedRose,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
   submit: {
     alignItems: 'center',

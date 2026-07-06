@@ -119,7 +119,7 @@ export default function LoginScreen({
           </Pressable>
         </View>
         <Pressable onPress={onSetPasswordPress} style={styles.setPasswordLink}>
-          <Text style={styles.link}>Setear contrasenia con codigo de registro</Text>
+          <Text style={styles.link}>Setear contraseña con codigo de registro</Text>
         </Pressable>
       </View>
     </View>

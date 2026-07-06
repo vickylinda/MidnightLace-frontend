@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import AddressMapPreview from '../../components/forms/address/AddressMapPreview';
 import { listPaymentMethods } from '../../services/paymentMethodsApi';
+import { quoteHomeShipping } from '../../services/shippingApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl } from '../../utils/config';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
+import { formatMoney } from '../../utils/money';
 
 const tabs = ['Subastas', 'Compras', 'Pujas', 'Multas', 'Metricas'];
 const tabLabels = {
@@ -19,9 +21,56 @@ const tabLabels = {
 };
 
 function formatAmount(value, moneda = 'ARS') {
-  if (value == null) return '-';
-  const formatted = Number(value).toLocaleString('es-AR', { maximumFractionDigits: 0 });
-  return moneda === 'USD' ? `U$S ${formatted}` : `$${formatted}`;
+  return formatMoney(value, moneda);
+}
+
+function isUsdCurrency(currency) {
+  return normalizeCurrency(currency) === 'USD';
+}
+
+function formatShippingTotal(productAmount, shippingAmount, currency) {
+  const product = Number(productAmount) || 0;
+  const shipping = Number(shippingAmount) || 0;
+  if (isUsdCurrency(currency)) {
+    return `${formatAmount(product, 'USD')} + ${formatAmount(shipping, 'ARS')}`;
+  }
+  return formatAmount(product + shipping, currency || 'ARS');
+}
+
+function getDepositAddress(source = {}) {
+  const product = source.detallesProducto || source.producto || source.productoDetalle || source;
+  const deposit =
+    source.deposito ||
+    source.depositoProducto ||
+    source.direccionRetiro ||
+    product.deposito ||
+    product.depositoAsignado ||
+    product.direccionRetiro ||
+    product.direccionDeposito ||
+    null;
+
+  if (deposit && typeof deposit === 'object') {
+    return {
+      country: deposit.pais || deposit.country || 'Argentina',
+      latitude: deposit.latitud || deposit.latitude || null,
+      locality: deposit.localidad || deposit.locality || deposit.ciudad || '',
+      longitude: deposit.longitud || deposit.longitude || null,
+      number: deposit.numero || deposit.number || '',
+      postalCode: deposit.codigoPostal || deposit.codigo_postal || deposit.postalCode || deposit.cp || '',
+      province: deposit.provincia || deposit.province || '',
+      street: deposit.calle || deposit.street || deposit.direccion || '',
+    };
+  }
+
+  const text =
+    source.direccionRetiroTexto ||
+    product.direccionRetiroTexto ||
+    product.direccionDepositoTexto ||
+    source.ubicacion ||
+    product.ubicacion ||
+    '';
+
+  return text ? { addressText: text } : null;
 }
 
 function formatDateTime(isoString) {
@@ -62,6 +111,24 @@ function buildMonthlyBids(pujas) {
     if (!result[year]) result[year] = MONTHS.map((label) => ({ label, value: 0 }));
     result[year][d.getMonth()].value += 1;
   });
+  return result;
+}
+
+function buildMonthlyBidsFromMetrics(pujasPorMes) {
+  const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const result = {};
+
+  (pujasPorMes || []).forEach((item) => {
+    const year = String(item.anio || item.year || '');
+    const monthIndex = Number(item.mes ?? item.month) - 1;
+    const value = Number(item.cantidad ?? item.value ?? 0);
+
+    if (!year || monthIndex < 0 || monthIndex > 11) return;
+
+    if (!result[year]) result[year] = MONTHS.map((label) => ({ label, value: 0 }));
+    result[year][monthIndex].value += Number.isFinite(value) ? value : 0;
+  });
+
   return result;
 }
 
@@ -223,12 +290,10 @@ function normalizePaymentMethod(payment) {
 function getPurchaseTotal(item) {
   const finalPrice = Number(item?.finalPrice ?? 140);
   const shipping = Number(item?.shipping ?? 0);
-  const commission = Number(item?.commission ?? 20);
 
   return (
     (Number.isFinite(finalPrice) ? finalPrice : 0) +
-    (Number.isFinite(shipping) ? shipping : 0) +
-    (Number.isFinite(commission) ? commission : 0)
+    (isUsdCurrency(item?.currency) ? 0 : (Number.isFinite(shipping) ? shipping : 0))
   );
 }
 
@@ -264,11 +329,11 @@ function mapPuja(p) {
 
 function mapCompra(r) {
   const importe = Number(r.importe || 0);
-  const comision = Number(r.comision || 0);
   const costoEnvio = Number(r.costoEnvio || 0);
   const retiraPersonalmente = isTruthyFlag(r.retiraPersonalmente);
   const pagado = isTruthyFlag(r.pagado);
-  const total = importe + comision + (retiraPersonalmente ? 0 : costoEnvio);
+  const shipping = retiraPersonalmente ? 0 : costoEnvio;
+  const totalLabel = formatShippingTotal(importe, shipping, r.moneda);
   const producto = r.detallesProducto || r.producto || {};
   const fotoProducto =
     r.fotoProducto ||
@@ -298,13 +363,11 @@ function mapCompra(r) {
       : require('../../assets/activity/sweet-lolita-dress.webp'),
     auction: r.nombreSubasta || r.subasta?.nombre || `Subasta #${r.idSubasta || r.subasta || r.identificador}`,
     date: fechaCompra ? formatDateOnly(fechaCompra) : '-',
-    amount: formatAmount(total, r.moneda),
+    amount: totalLabel,
     baseAmount: formatAmount(importe, r.moneda),
-    commission: comision,
-    commissionLabel: formatAmount(comision, r.moneda),
-    shippingCost: formatAmount(costoEnvio, r.moneda),
+    shippingCost: formatAmount(shipping, 'ARS'),
     finalPrice: importe,
-    shipping: retiraPersonalmente ? 0 : costoEnvio,
+    shipping,
     currency: r.moneda || 'USD',
     status: pagado ? 'pagado' : 'pendiente',
     auctionDate: fechaCompra ? formatDateOnly(fechaCompra) : '-',
@@ -314,12 +377,13 @@ function mapCompra(r) {
     fineAmount:
       r.importeMulta != null || r.montoMulta != null
         ? formatAmount(r.importeMulta ?? r.montoMulta, r.moneda)
-        : '$300 USD',
+        : formatAmount(importe * 0.1, r.moneda),
     paidDate: pagado && r.fechaPago ? formatDateOnly(r.fechaPago) : null,
     paymentMethod: pagado ? normalizePaymentMethod(medioPago) : null,
     retiraPersonalmente,
     pickup: r.direccionRetiro || null,
     pickupAddress: r.direccionRetiroTexto || null,
+    depositAddress: getDepositAddress(r),
     pickupWindow: r.ventanaRetiro || null,
     details: r.detalles || null,
   };
@@ -543,7 +607,7 @@ const INITIAL_WON_AUCTIONS = [
     status: 'pendiente',
     auctionDate: '13/05/2026',
     dueDate: '15/05/2026',
-    fineAmount: '$300 USD',
+    fineAmount: formatAmount(300, 'USD'),
     paidDate: null,
     paymentMethod: null,
   },
@@ -586,6 +650,33 @@ function formatNumberWithDots(value) {
   }).format(num);
 }
 
+function PaymentSweep() {
+  const sweep = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.timing(sweep, {
+        duration: 900,
+        toValue: 1,
+        useNativeDriver: true,
+      })
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [sweep]);
+
+  const translateX = sweep.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-130, 210],
+  });
+
+  return (
+    <View style={styles.paymentSweepTrack}>
+      <Animated.View style={[styles.paymentSweepBar, { transform: [{ translateX }] }]} />
+    </View>
+  );
+}
+
 function WonAuctionCard({
   isPaying = false,
   item,
@@ -600,14 +691,13 @@ function WonAuctionCard({
   const isPending = item.status === 'pendiente';
   const finalPrice = item.finalPrice || 140;
   const shipping = item.shipping ?? 0;
-  const commission = item.commission ?? 20;
   const currency = item.currency || 'USD';
-  const totalAmount = getPurchaseTotal(item);
 
-  const formattedFinalPrice = `$${formatNumberWithDots(finalPrice)} ${currency}`;
-  const formattedShipping = `$${formatNumberWithDots(shipping)} ${currency} (recogida en tienda)`;
-  const formattedCommission = `$${formatNumberWithDots(commission)} ${currency}`;
-  const formattedTotal = `$${formatNumberWithDots(totalAmount)} ${currency}`;
+  const formattedFinalPrice = formatAmount(finalPrice, currency);
+  const formattedShipping = item.retiraPersonalmente
+    ? formatAmount(0, 'ARS')
+    : formatAmount(shipping, 'ARS');
+  const formattedTotal = formatShippingTotal(finalPrice, shipping, currency);
 
   const defaultPaymentId = paymentMethods[0]?.id;
   const currentSelectedPaymentId = selectedPaymentId || defaultPaymentId;
@@ -642,12 +732,8 @@ function WonAuctionCard({
         <Text style={styles.wonPriceValue}>{formattedFinalPrice}</Text>
       </View>
       <View style={styles.wonPriceRow}>
-        <Text style={styles.wonPriceLabel}>Envio:</Text>
+        <Text style={styles.wonPriceLabel}>Envio a domicilio:</Text>
         <Text style={styles.wonPriceValue}>{formattedShipping}</Text>
-      </View>
-      <View style={styles.wonPriceRow}>
-        <Text style={styles.wonPriceLabel}>Comision de servicio:</Text>
-        <Text style={styles.wonPriceValue}>{formattedCommission}</Text>
       </View>
 
       <View style={styles.wonPriceDivider} />
@@ -657,6 +743,13 @@ function WonAuctionCard({
         <Text style={styles.wonPriceTotalValue}>{formattedTotal}</Text>
       </View>
 
+      {item.depositAddress ? (
+        <View style={styles.depositMapBlock}>
+          <Text style={styles.wonSectionTitle}>Deposito del producto</Text>
+          <AddressMapPreview address={item.depositAddress} />
+        </View>
+      ) : null}
+
       {isPending ? (
         <>
           {/* Warning notice box */}
@@ -665,7 +758,7 @@ function WonAuctionCard({
             <Text style={styles.wonWarningText}>
               Esta subasta esta pendiente de pago. Si no pagas antes del{' '}
               {item.dueDate || '15/05/2026'} perderas el articulo y seras multado
-              con un valor de {item.fineAmount || '$300 USD'}.
+              con el 10% del valor ofertado: {item.fineAmount}.
             </Text>
           </View>
 
@@ -716,10 +809,17 @@ function WonAuctionCard({
             onPress={() => onPay(item.id, currentSelectedPaymentId)}
           >
             {isPaying ? (
-              <ActivityIndicator color={colors.white} size="small" />
+              <PaymentSweep />
             ) : (
               <Text style={styles.wonPayButtonText}>PAGAR {formattedTotal}</Text>
             )}
+          </Pressable>
+          <Pressable
+            disabled={isPaying || item.retiraPersonalmente}
+            onPress={onRequestPickup}
+            style={[styles.pickupInlineButton, item.retiraPersonalmente ? styles.modalButtonDisabled : null]}
+          >
+            <Text style={styles.pickupInlineButtonText}>Retirar personalmente</Text>
           </Pressable>
           <Text style={styles.wonDisclaimerText}>
             Al confirmar aceptas nuestros Terminos y Politica de privacidad
@@ -765,8 +865,7 @@ function WonAuctionCard({
             </View>
           </View>
           <Text style={styles.wonSuccessNotice}>
-            Tu pago se ha procesado correctamente. Estaras recibiendo un email con
-            proximas instrucciones en la brevedad.
+            Tu pago se ha procesado correctamente. Tu pedido se enviara a domicilio.
           </Text>
         </>
       )}
@@ -1198,9 +1297,8 @@ function PurchaseDetailModal({ item, onClose }) {
         <Text style={styles.modalText}>Subasta: {item.auction}</Text>
         <Text style={styles.modalText}>Total: {item.amount}</Text>
         <Text style={styles.modalText}>Importe: {item.baseAmount}</Text>
-        <Text style={styles.modalText}>Comision: {item.commissionLabel || formatAmount(item.commission, item.currency)}</Text>
         <Text style={styles.modalText}>
-          Envio: {item.retiraPersonalmente ? 'No aplica por retiro personal' : item.shippingCost}
+          Envio a domicilio: {item.retiraPersonalmente ? formatAmount(0, 'ARS') : item.shippingCost}
         </Text>
         {item.retiraPersonalmente ? (
           <Text style={styles.modalStrongText}>Seguro eliminado por retiro personal.</Text>
@@ -1281,9 +1379,11 @@ function PickupLocationModal({ item, onClose }) {
 function PaymentSuccessModal({ item, onClose }) {
   if (!item) return null;
 
-  const totalAmount =
-    (item.finalPrice || 140) + (item.shipping || 0) + (item.commission || 20);
-  const formattedTotal = `$${formatNumberWithDots(totalAmount)} ${item.currency || 'USD'}`;
+  const formattedTotal = formatShippingTotal(
+    item.finalPrice || 140,
+    item.shipping || 0,
+    item.currency || 'USD'
+  );
 
   return (
     <AppModal onClose={onClose} showCloseButton={false} visible={Boolean(item)}>
@@ -1296,9 +1396,7 @@ function PaymentSuccessModal({ item, onClose }) {
           Tu pago de <Text style={styles.successModalStrongText}>{formattedTotal}</Text> por el artículo{' '}
           <Text style={styles.successModalStrongText}>"{item.code || item.title}"</Text> se procesó correctamente.
         </Text>
-        <Text style={styles.modalSubNotice}>
-          Estarás recibiendo un email con las próximas instrucciones a la brevedad.
-        </Text>
+        <Text style={styles.modalSubNotice}>Tu pedido se enviara a domicilio.</Text>
         <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
           <Text style={styles.modalPrimaryText}>Entendido</Text>
         </Pressable>
@@ -1406,138 +1504,47 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
       if (tab === 'Subastas') {
         const subastasRes = await apiFetch('/v1/mi/subastas');
-        result = getResponseItems(subastasRes);
+        result = getResponseItems(subastasRes).map(mapSubasta);
       } else if (tab === 'Compras') {
         const comprasRes = await apiFetch('/v1/mi/compras');
         const items = getResponseItems(comprasRes);
-        result = items.map((compra) => {
-          const isPagado = isTruthyFlag(compra.pagado);
-          const fecSubasta = compra.fechaPago ? new Date(compra.fechaPago) : new Date();
-          const venc = compra.fechaVencimiento
-            ? new Date(compra.fechaVencimiento)
-            : new Date(fecSubasta.getTime() + 2 * 24 * 60 * 60 * 1000);
-
-          const formatDateStr = (d) => {
-            if (!d || isNaN(d.getTime())) return '14/04/2026';
-            const day = String(d.getDate()).padStart(2, '0');
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const year = d.getFullYear();
-            return `${day}/${month}/${year}`;
-          };
-
-          const prod = compra.detallesProducto || {};
-          const firstFoto = Array.isArray(prod.fotos) && prod.fotos[0]
-            ? { uri: resolveApiAssetUrl(prod.fotos[0]) }
-            : require('../../assets/activity/sweet-lolita-dress.webp');
-
-          let fullTitle = '';
-          if (prod.nombre && prod.descripcionCatalogo) {
-            fullTitle = `${prod.nombre} - ${prod.descripcionCatalogo}`;
-          } else {
-            fullTitle = prod.nombre || prod.descripcionCatalogo || `Subasta #${compra.subasta} - Producto #${compra.producto}`;
-          }
-
-          return {
-            id: compra.identificador,
-            code: prod.codigo || `SUB-${compra.identificador}`,
-            title: fullTitle,
-            image: firstFoto,
-            finalPrice: Number(compra.importe) || 140,
-            shipping: Number(compra.costoEnvio) || 0,
-            commission: Number(compra.comision) || 20,
-            currency: compra.moneda || 'USD',
-            status: isPagado ? 'pagado' : 'pendiente',
-            auctionDate: formatDateStr(fecSubasta),
-            dueDate: formatDateStr(venc),
-            fineAmount: '$300 USD',
-            paidDate: isPagado ? formatDateStr(new Date(compra.fechaPago)) : null,
-            paymentMethod: isPagado
-              ? normalizePaymentMethod(compra.medioPago || compra.paymentMethod)
-              : null,
-            identificador: compra.identificador,
-            retiraPersonalmente: compra.retiraPersonalmente,
-            pickupAddress: 'Av. Corrientes 1234, CABA',
-            pickupWindow: 'Lunes a Viernes de 10:00 a 18:00 hs',
-            pickup: 'Av. Corrientes 1234, CABA',
-          };
-        });
+        result = items.map(mapCompra);
+        let profile = null;
+        try {
+          profile = await apiFetch('/v1/mi/perfil');
+        } catch {
+          profile = null;
+        }
+        if (profile) {
+          result = await Promise.all(
+            result.map(async (item) => {
+              if (item.retiraPersonalmente || item.shipping > 0) return item;
+              const shippingQuote = await quoteHomeShipping({
+                destinationAddress: profile,
+                originAddress: item.depositAddress || item.pickup,
+              });
+              if (shippingQuote == null) return item;
+              return {
+                ...item,
+                amount: formatShippingTotal(item.finalPrice, shippingQuote, item.currency),
+                shipping: shippingQuote,
+                shippingCost: formatAmount(shippingQuote, 'ARS'),
+              };
+            })
+          );
+        }
       } else if (tab === 'Pujas') {
         const pujasRes = await apiFetch('/v1/mi/pujas');
-        result = getResponseItems(pujasRes);
+        result = getResponseItems(pujasRes).map(mapPuja);
       } else if (tab === 'Multas') {
         const multasRes = await apiFetch('/v1/mi/multas');
-        result = getResponseItems(multasRes);
+        result = getResponseItems(multasRes).map(mapMulta);
       } else if (tab === 'Metricas') {
-        const [metricasRes, subastasRes, pujasRes, comprasRes] = await Promise.all([
-          apiFetch('/v1/mi/metricas'),
-          apiFetch('/v1/mi/subastas'),
-          apiFetch('/v1/mi/pujas'),
-          apiFetch('/v1/mi/compras'),
-        ]);
-
-        const subastas = getResponseItems(subastasRes);
-        const pujas = getResponseItems(pujasRes);
-        const compras = getResponseItems(comprasRes);
-
-        const totalImportePujado = pujas.reduce(
-          (acc, puja) => acc + Number(puja.importe || 0),
-          0
-        );
-        const totalImportePagado = compras
-          .filter((compra) => isTruthyFlag(compra.pagado))
-          .reduce((acc, compra) => acc + Number(compra.importe || 0), 0);
-
-        const categoriasMap = {};
-        subastas.forEach((subasta) => {
-          const categoria = subasta.categoria || 'sin categoria';
-          if (!categoriasMap[categoria]) {
-            categoriasMap[categoria] = {
-              categoria,
-              participaciones: 0,
-              ganadas: 0,
-            };
-          }
-          categoriasMap[categoria].participaciones += 1;
-        });
-
-        const subastasPorId = {};
-        subastas.forEach((subasta) => {
-          subastasPorId[subasta.identificador] = subasta;
-        });
-
-        pujas.forEach((puja) => {
-          if (puja.ganador !== 'si') return;
-
-          const subastaId =
-            puja.subasta?.identificador ??
-            puja.subasta?.id ??
-            puja.idSubasta;
-          const subasta = subastasPorId[subastaId];
-
-          if (!subasta?.categoria) return;
-
-          const categoria = subasta.categoria;
-          if (!categoriasMap[categoria]) {
-            categoriasMap[categoria] = {
-              categoria,
-              participaciones: 0,
-              ganadas: 0,
-            };
-          }
-          categoriasMap[categoria].ganadas += 1;
-        });
+        const metricasRes = await apiFetch('/v1/mi/metricas');
 
         result = {
-          metricas: {
-            ...metricasRes,
-            totalSubastasParticipadas: subastas.length,
-            totalGanadas: metricasRes.pujasGanadas ?? 0,
-            totalPujasRealizadas: metricasRes.totalPujas ?? pujas.length,
-            totalImportePagado,
-            totalImportePujado,
-            porCategoria: Object.values(categoriasMap),
-          },
-          monthlyBidHistory: buildMonthlyBids(pujas),
+          metricas: metricasRes || {},
+          monthlyBidHistory: buildMonthlyBidsFromMetrics(metricasRes?.pujasPorMes),
         };
       }
 
@@ -2759,6 +2766,40 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 16,
     letterSpacing: 0.5,
+  },
+  pickupInlineButton: {
+    alignItems: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginTop: 10,
+    minHeight: 42,
+    paddingVertical: 10,
+    width: '100%',
+  },
+  pickupInlineButtonText: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 14,
+  },
+  paymentSweepTrack: {
+    backgroundColor: 'rgba(255,255,255,0.26)',
+    borderRadius: 999,
+    height: 8,
+    overflow: 'hidden',
+    width: 180,
+  },
+  paymentSweepBar: {
+    backgroundColor: colors.white,
+    borderRadius: 999,
+    height: 8,
+    width: 84,
+  },
+  depositMapBlock: {
+    marginBottom: 8,
+    marginTop: 4,
+    width: '100%',
   },
   wonDisclaimerText: {
     color: '#510310',

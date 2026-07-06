@@ -19,6 +19,7 @@ import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl } from '../../utils/config';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
+import { formatMoney } from '../../utils/money';
 
 const STATUS_MAP = {
   pendiente: { status: 'pending', statusLabel: 'pendiente' },
@@ -73,9 +74,9 @@ const OWNER_STATUS_DETAILS = {
 
 const AUCTIONEER_STATUS_DETAILS = {
   pending: 'La empresa todavia esta revisando el producto.',
-  confirming: 'El producto ya esta en un catalogo y espera la respuesta del duenio sobre las condiciones.',
+  confirming: 'El producto ya esta en un catalogo y espera la respuesta del dueño sobre las condiciones.',
   assigned: 'Producto aprobado en tu pool. Podes sumarlo a un catalogo programado.',
-  auction: 'El duenio acepto las condiciones y el producto ya puede subastarse.',
+  auction: 'El dueño acepto las condiciones y el producto ya puede subastarse.',
   rejected: 'La empresa rechazo el producto. No puede incorporarse a subastas.',
   sold: 'El producto fue vendido en subasta.',
 };
@@ -91,7 +92,7 @@ const OWNER_STATUS_NOTES = {
 
 const AUCTIONEER_STATUS_NOTES = {
   pending: 'Pendiente de revision',
-  confirming: 'Esperando respuesta del duenio',
+  confirming: 'Esperando respuesta del dueño',
   assigned: 'Disponible para catalogar',
   auction: 'Listo para subasta',
   rejected: 'No disponible',
@@ -185,58 +186,31 @@ function cleanProductText(value) {
 }
 
 function splitCatalogDescription(producto, isSubastador = false) {
-  const catalogText = cleanProductText(
+  const catalogDescription = cleanProductText(
     producto.descripcionCatalogo ?? producto.descripcion_catalogo
   );
-  const catalogLines = catalogText
-    .split('\n')
-    .map((line) => cleanProductText(line))
-    .filter(Boolean);
-
-  const completeDescriptionLines = cleanProductText(
-    producto.descripcionCompleta ?? producto.descripcion_completa
-  )
-    .split('\n')
-    .map((line) => cleanProductText(line))
-    .filter(Boolean);
 
   const title =
     cleanProductText(producto.nombre) ||
     cleanProductText(producto.titulo) ||
     cleanProductText(producto.title) ||
     cleanProductText(producto.name) ||
-    catalogLines[0] ||
+    catalogDescription ||
     ((producto.identificador ?? producto.id) ? `Producto #${producto.identificador ?? producto.id}` : 'Producto sin nombre');
 
   const shortDescription =
     cleanProductText(producto.descripcionBreve ?? producto.descripcion_breve) ||
-    (catalogLines.length > 1 ? catalogLines.slice(1).join('\n').trim() : catalogLines[0]) ||
-    (isSubastador ? completeDescriptionLines[0] : null);
+    null;
 
   return {
+    catalogDescription,
     title,
     shortDescription,
   };
 }
 
 function formatPrice(value, currency) {
-  const price = Number(String(value ?? '').replace(',', '.'));
-
-  if (!Number.isFinite(price)) {
-    return null;
-  }
-
-  const currencyCode = String(currency || 'ARS').toUpperCase();
-
-  try {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: currencyCode,
-      maximumFractionDigits: price % 1 === 0 ? 0 : 2,
-    }).format(price);
-  } catch {
-    return `${currencyCode} ${price}`;
-  }
+  return formatMoney(value, currency, { emptyValue: null });
 }
 
 function parseArtisticDetails(producto) {
@@ -285,7 +259,7 @@ function mapProduct(producto, isSubastador = false) {
     statusLabel: producto.estadoProducto,
   };
 
-  const { title, shortDescription } = splitCatalogDescription(producto, isSubastador);
+  const { catalogDescription, title, shortDescription } = splitCatalogDescription(producto, isSubastador);
 
   const baseCompleteDescription =
     String(producto.descripcionCompleta ?? producto.descripcion_completa ?? '').trim() || null;
@@ -320,13 +294,14 @@ function mapProduct(producto, isSubastador = false) {
 
   return {
     artisticDetails,
+    catalogDescription,
     completeDescription,
-    description: shortDescription,
+    description: catalogDescription,
     id: String(rawId ?? producto.id ?? title),
     rawId,
     imageSource,
     imageSources,
-    owner: ownerDisplay,
+    owner: isSubastador ? ownerDisplay : null,
     ownerLabel: 'Publicado por',
     priceLabel: formatPrice(producto.precioBase, producto.moneda),
     rejectionReason:
@@ -455,10 +430,10 @@ function ProductDetailsModal({ product, onClose, onReviewConditions, isSubastado
               </View>
             ) : null}
 
-            {product.shortDescription ? (
+            {(product.shortDescription || product.catalogDescription) ? (
               <View style={styles.modalDescriptionBox}>
                 <Text style={styles.modalDescriptionTitle}>Descripción breve</Text>
-                <Text style={styles.modalDescription}>{product.shortDescription}</Text>
+                <Text style={styles.modalDescription}>{product.shortDescription || product.catalogDescription}</Text>
               </View>
             ) : null}
 
@@ -557,11 +532,11 @@ function ConditionsModal({ state, onAccept, onReject, onClose }) {
             <>
               <View style={styles.conditionRow}>
                 <Text style={styles.conditionLabel}>Precio base:</Text>
-                <Text style={styles.conditionValue}>${data.precioBase}</Text>
+                <Text style={styles.conditionValue}>{formatPrice(data.precioBase, data.moneda)}</Text>
               </View>
               <View style={styles.conditionRow}>
                 <Text style={styles.conditionLabel}>Comisión:</Text>
-                <Text style={styles.conditionValue}>${data.comision}</Text>
+                <Text style={styles.conditionValue}>{formatPrice(data.comision, data.moneda)}</Text>
               </View>
               <View style={styles.conditionRow}>
                 <Text style={styles.conditionLabel}>Fecha:</Text>

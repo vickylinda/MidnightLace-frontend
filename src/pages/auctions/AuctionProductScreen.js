@@ -23,12 +23,18 @@ if (Platform.OS === 'android') {
 }
 
 import SubastadoStamp from '../../components/status/SubastadoStamp';
+import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
 import { API_BASE_URL, resolveApiAssetUrl } from '../../utils/config';
-import { getAuctionDetails, getActiveItem } from '../../services/auctionsApi';
+import { formatMoney } from '../../utils/money';
+import {
+  getAuctionBids,
+  getAuctionDetails,
+  getActiveItem,
+} from '../../services/auctionsApi';
 import { getProfile } from '../../services/profileApi';
 
 const palette = {
@@ -39,7 +45,6 @@ const palette = {
 };
 
 const CATEGORIES_ORDER = ['comun', 'especial', 'plata', 'oro', 'platino'];
-
 function getCategoryRank(catName) {
   if (!catName) return 0;
   const index = CATEGORIES_ORDER.indexOf(String(catName).toLowerCase().trim());
@@ -51,7 +56,7 @@ function checkCanBid({ isLoggedIn, userCategory, auctionCategory, hasVerifiedPay
     return {
       canBid: false,
       reason: 'NOT_LOGGED_IN',
-      buttonText: 'INICIÁ SESIÓN PARA PUJAR',
+      buttonText: 'INICIA SESION PARA PUJAR',
     };
   }
 
@@ -62,7 +67,7 @@ function checkCanBid({ isLoggedIn, userCategory, auctionCategory, hasVerifiedPay
     return {
       canBid: false,
       reason: 'CATEGORY_TOO_LOW',
-      buttonText: 'CATEGORÍA INSUFICIENTE PARA PUJAR',
+      buttonText: 'CATEGORIA INSUFICIENTE PARA PUJAR',
     };
   }
 
@@ -79,6 +84,108 @@ function checkCanBid({ isLoggedIn, userCategory, auctionCategory, hasVerifiedPay
     reason: 'OK',
     buttonText: null,
   };
+}
+
+function cleanProductText(value) {
+  const text = String(value ?? '').trim();
+  return text && text.toLowerCase() !== 'no posee' ? text : '';
+}
+
+function normalizeProductPhoto(photo) {
+  if (!photo) {
+    return null;
+  }
+
+  if (typeof photo === 'string') {
+    return { key: photo, source: { uri: resolveApiAssetUrl(photo) } };
+  }
+
+  const path =
+    photo.foto ??
+    photo.url ??
+    photo.uri ??
+    photo.ruta ??
+    photo.path ??
+    photo.rutaArchivo ??
+    photo.ruta_archivo ??
+    photo.archivo ??
+    photo.nombreArchivo;
+
+  return path ? { key: path, source: { uri: resolveApiAssetUrl(path) } } : null;
+}
+
+function getProductPhotos(...products) {
+  const rawPhotos = [];
+
+  products.filter(Boolean).forEach((item) => {
+    if (item.fotoPrincipal) rawPhotos.push(item.fotoPrincipal);
+    [
+      item.fotos,
+      item.imagenes,
+      item.fotosProducto,
+      item.urlsFotos,
+      item.archivos,
+    ].forEach((list) => {
+      if (Array.isArray(list)) {
+        rawPhotos.push(...list);
+      }
+    });
+  });
+
+  const seen = new Set();
+  return rawPhotos
+    .map(normalizeProductPhoto)
+    .filter(Boolean)
+    .filter((photo) => {
+      if (seen.has(photo.key)) return false;
+      seen.add(photo.key);
+      return true;
+    });
+}
+
+function getProductDetailId(product) {
+  return (
+    product?.idProducto ??
+    product?.id_producto ??
+    product?.producto ??
+    product?.productoId ??
+    product?.producto_id ??
+    product?.identificadorProducto ??
+    product?.identificador_producto ??
+    product?.identificador ??
+    product?.id
+  );
+}
+
+function getOwnerId(product) {
+  return (
+    product?.vendedor ??
+    product?.idVendedor ??
+    product?.id_vendedor ??
+    product?.duenio ??
+    product?.dueno ??
+    product?.idDuenio ??
+    product?.id_duenio
+  );
+}
+
+function dispatchAuctionSwapBack() {
+  if (typeof window === 'undefined' || !window.dispatchEvent) {
+    return;
+  }
+
+  const EventConstructor =
+    typeof window.CustomEvent === 'function'
+      ? window.CustomEvent
+      : typeof CustomEvent === 'function'
+      ? CustomEvent
+      : typeof window.Event === 'function'
+      ? window.Event
+      : null;
+
+  if (EventConstructor) {
+    window.dispatchEvent(new EventConstructor('auction_swap_back'));
+  }
 }
 
 function isCardPaymentMethod(method) {
@@ -106,6 +213,46 @@ function chooseBidPaymentMethod(methods, currency) {
     validMethods[0] ||
     null
   );
+}
+
+function dispatchAuctionListNavigation() {
+  if (typeof window === 'undefined' || !window.dispatchEvent) {
+    return;
+  }
+
+  const EventConstructor =
+    typeof window.CustomEvent === 'function'
+      ? window.CustomEvent
+      : typeof CustomEvent === 'function'
+      ? CustomEvent
+      : null;
+
+  if (EventConstructor) {
+    window.dispatchEvent(new EventConstructor('auction_go_to_list'));
+  }
+}
+
+function getTimeValueMs(value) {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function formatActiveItemTime(totalSecs) {
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  const pad = (num) => String(num).padStart(2, '0');
+
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hours}h ${pad(remainingMins)}m`;
+  }
+
+  return `${pad(mins)}:${pad(secs)}`;
 }
 
 // Pure JS base64 decoder for Hermers / React Native environment
@@ -190,11 +337,11 @@ function WebCameraView({ style, children }) {
             }
           }
         } else {
-          if (isMounted) setErrorMsg('Cámara no compatible o no disponible');
+          if (isMounted) setErrorMsg('Camara no compatible o no disponible');
         }
       } catch (err) {
         console.log('[WebCameraView] Camera access error:', err);
-        if (isMounted) setErrorMsg('Permiso de cámara denegado');
+        if (isMounted) setErrorMsg('Permiso de camara denegado');
       }
     }
 
@@ -239,7 +386,7 @@ function WebCameraView({ style, children }) {
   return (
     <View style={[{ backgroundColor: '#0A0103', overflow: 'hidden', justifyContent: 'center', alignItems: 'center', position: 'relative' }, style]}>
       <Text style={{ color: '#fff', textAlign: 'center', fontSize: 13, fontFamily: fonts.medium }}>
-        Transmisión en Vivo activa
+        Transmision en Vivo activa
       </Text>
       {children}
     </View>
@@ -302,7 +449,7 @@ function BidHistoryItem({ amount, bidder, time, isLast }) {
       <View style={styles.bidMarker} />
       <View style={styles.bidCopy}>
         <Text numberOfLines={1} style={styles.bidUser}>
-          <Text style={styles.bidUserName}>{bidder}</Text> pujó
+          <Text style={styles.bidUserName}>{bidder}</Text> pujo
         </Text>
         <Text numberOfLines={1} style={styles.bidAmount}>
           {amount} {time}
@@ -325,7 +472,12 @@ function DescriptionItem({ detail, title }) {
   );
 }
 
-export default function AuctionProductScreen({ product, subastaId, onAuctionFinished }) {
+export default function AuctionProductScreen({
+  product,
+  subastaId,
+  isSubastador = false,
+  onAuctionFinished,
+}) {
   const { width } = useWindowDimensions();
   const [subastaDetails, setSubastaDetails] = useState(null);
   const [productDetails, setProductDetails] = useState(null);
@@ -349,43 +501,47 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
   const cameraBidSlideAnim = useRef(new Animated.Value(15)).current;
   const newBidPushAnim = useRef(new Animated.Value(1)).current;
   const [latestCameraBid, setLatestCameraBid] = useState(null);
+  const expirationCheckRef = useRef(false);
+  const localWinnerModalShownRef = useRef(false);
+  const latestBidForItemRef = useRef(null);
+  const bidsListRef = useRef([]);
 
   const currentUserId = getUserId();
-  const currency = subastaDetails?.moneda || product.moneda || 'USD';
+  const { triggerWinnerModal } = useWinnerModal();
+  const currency = product.moneda || product.monedaSubasta || subastaDetails?.moneda || 'USD';
+  const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
+
+  useEffect(() => {
+    localWinnerModalShownRef.current = false;
+  }, [activeItemId]);
+
+  useEffect(() => {
+    bidsListRef.current = bidsList;
+  }, [bidsList]);
 
   // Helper function to trigger swap back navigation
   const triggerSwapBack = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('auction_swap_back'));
-    }
+    dispatchAuctionSwapBack();
     if (onAuctionFinished) {
       onAuctionFinished();
     }
   }, [onAuctionFinished]);
 
-  // Effect when subasta state changes to finalizada
-  useEffect(() => {
-    if (subastaDetails && subastaDetails.estado === 'finalizada') {
-      const timer = setTimeout(() => {
-        triggerSwapBack();
-      }, 400);
-      return () => clearTimeout(timer);
+  const triggerAuctionList = useCallback(() => {
+    dispatchAuctionListNavigation();
+    if (onAuctionFinished) {
+      onAuctionFinished({ target: 'auctions' });
     }
-  }, [subastaDetails, triggerSwapBack]);
+  }, [onAuctionFinished]);
 
   // Format price helper
   const formatPrice = (amount, curr) => {
-    if (amount === undefined || amount === null || isNaN(amount)) return '';
-    const formatted = Number(amount).toLocaleString('es-AR', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-    return `$ ${formatted}`;
+    return formatMoney(amount, curr || currency, { emptyValue: '' });
   };
 
-  // 10-second interval to tick relative times (hace X min)
+  // Tick the active item countdown and relative bid times.
   useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 10000);
+    const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -399,21 +555,23 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
     const loadData = async () => {
       try {
         // 1. Fetch subasta details
-        const subRes = await getAuctionDetails(subastaId);
+        const subRes = await getAuctionDetails(subastaId, { isSubastador });
         if (!active) return;
         setSubastaDetails(subRes);
-
-        // 2. Fetch seller details
-        if (product.vendedor ?? product.idVendedor) {
-          apiFetch(`/v1/perfil/vendedor/${product.vendedor ?? product.idVendedor}`)
-            .then((seller) => {
-              if (active) setSellerInfo(seller);
-            })
-            .catch((err) => console.log('Error loading seller info:', err));
+        // 2. Fetch auctioneer public details
+        const auctioneerId = subRes?.idSubastador ?? subRes?.id_subastador ?? subRes?.subastador;
+        if (auctioneerId) {
+          try {
+            const seller = await apiFetch(`/v1/perfil/${auctioneerId}/publico`);
+            if (!active) return;
+            setSellerInfo(seller);
+          } catch (err) {
+            console.log('Error loading auctioneer info:', err);
+          }
         }
 
         // 3. Fetch product details
-        const idProd = product.idProducto ?? product.producto;
+        const idProd = getProductDetailId(product);
         if (idProd) {
           apiFetch(`/v1/productos/${idProd}`)
             .then((prod) => {
@@ -423,14 +581,20 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
         }
 
         // 4. Fetch bid history
-        const bidsRes = await apiFetch(`/v1/subastas/${subastaId}/items/${product.identificador}/pujas?pagina=1&cantidad=50`);
+        const bidsRes = await getAuctionBids(
+          subastaId,
+          product.identificador,
+          1,
+          50,
+          { isSubastador }
+        );
         if (!active) return;
         const fetchedBids = Array.isArray(bidsRes) ? bidsRes : bidsRes?.datos ?? [];
         // Sort newest first
         setBidsList([...fetchedBids].reverse());
 
         // 5. Fetch active item
-        const activeItemData = await getActiveItem(subastaId);
+        const activeItemData = await getActiveItem(subastaId, { isSubastador });
         if (!active) return;
         setActiveItem(activeItemData);
 
@@ -455,7 +619,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
     return () => {
       active = false;
     };
-  }, [subastaId, product]);
+  }, [isSubastador, subastaId, product]);
 
   // WebSocket connection for real-time bids
   useEffect(() => {
@@ -475,7 +639,67 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        if (message.evento === 'subastaFinalizada' || message.evento === 'itemSubastado' || message.evento === 'cambioItem') {
+        if (message.evento === 'pujaGanadora') {
+          const datos = message.datos || {};
+          const winnerItemId = datos.idItem ?? datos.id_item;
+          const winnerClientId = datos.idCliente ?? datos.id_cliente;
+          if (
+            active &&
+            winnerItemId &&
+            winnerClientId &&
+            Number(winnerItemId) === Number(product.identificador) &&
+            Number(winnerClientId) === Number(currentUserId) &&
+            !localWinnerModalShownRef.current
+          ) {
+            localWinnerModalShownRef.current = true;
+            triggerWinnerModal({
+              importe: datos.importe ?? currentPriceStr,
+              moneda: currency,
+              comision: activeItem?.comision ?? product.comision,
+              costoEnvio: 0,
+              productoDetalle: productDetails || product,
+            });
+          }
+          return;
+        }
+
+        if (message.evento === 'cambioItem') {
+          const datos = message.datos || {};
+          const previousItemId = datos.itemAnterior?.idItem ?? datos.itemAnterior?.id_item;
+          const isClosingCurrentProduct =
+            previousItemId && Number(previousItemId) === Number(product.identificador);
+
+          if (active && isClosingCurrentProduct && !localWinnerModalShownRef.current) {
+            const latestBid =
+              latestBidForItemRef.current ||
+              getHighestBid(bidsListRef.current);
+            const latestBidUserId = getBidUserId(latestBid);
+            if (
+              currentUserId &&
+              latestBidUserId &&
+              Number(latestBidUserId) === Number(currentUserId)
+            ) {
+              localWinnerModalShownRef.current = true;
+              triggerWinnerModal({
+                importe:
+                  latestBid?.importe ??
+                  datos.itemAnterior?.mejorOferta ??
+                  datos.itemAnterior?.mejor_oferta ??
+                  currentPriceStr,
+                moneda: currency,
+                comision: activeItem?.comision ?? product.comision,
+                costoEnvio: 0,
+                productoDetalle: productDetails || product,
+              });
+            }
+          }
+
+          console.log('[Product Details] Received auction item change WS event:', message.evento);
+          setTimeout(triggerSwapBack, 50);
+          return;
+        }
+
+        if (message.evento === 'subastaFinalizada' || message.evento === 'itemSubastado') {
           console.log('[Product Details] Received auction end/item change WS event:', message.evento);
           triggerSwapBack();
           return;
@@ -486,6 +710,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           const datosIdItem = datos.idItem ?? datos.id_item;
           
           if (Number(datosIdItem) === Number(product.identificador)) {
+            latestBidForItemRef.current = datos;
             if (active) {
               const cleanNumericPrice = (val) => {
                 if (typeof val === 'number') return val;
@@ -500,6 +725,27 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
               
               setCurrentPriceStr(String(newPrice));
               setMinBidVal(Number(datos.pujaMinima ?? datos.puja_minima));
+              setActiveItem((current) => {
+                const currentIdItem = current?.idItem ?? current?.id_item;
+                if (!current || Number(currentIdItem) !== Number(datosIdItem)) {
+                  return current;
+                }
+
+                const nextEndTime =
+                  datos.finalizaEn ??
+                  datos.finaliza_en ??
+                  current.finalizaEn ??
+                  current.finaliza_en;
+                return {
+                  ...current,
+                  mejorOferta: datos.importe,
+                  mejor_oferta: datos.importe,
+                  pujaMinima: datos.pujaMinima ?? datos.puja_minima,
+                  puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                  finalizaEn: nextEndTime,
+                  finaliza_en: nextEndTime,
+                };
+              });
               
               // Add bid to history list at the top
               const newBidEntry = {
@@ -572,7 +818,18 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
       active = false;
       ws.close();
     };
-  }, [subastaId, subastaDetails, currentPriceStr]);
+  }, [
+    activeItem,
+    currency,
+    currentPriceStr,
+    currentUserId,
+    product,
+    productDetails,
+    subastaDetails,
+    subastaId,
+    triggerSwapBack,
+    triggerWinnerModal,
+  ]);
 
   // Format relative time helper
   const formatRelativeTime = (isoString) => {
@@ -634,8 +891,15 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
   const isAuctionActive = subastaDetails?.estado === 'abierta';
   const isBeingSubastado = isAuctionActive && Boolean(activeItem) && Number(activeItem.idItem ?? activeItem.id_item) === Number(product.identificador);
   const isFinished = product.subastado === 'si';
+  const activeItemEndTime = activeItem?.finalizaEn ?? activeItem?.finaliza_en;
+  const activeItemEndMs = getTimeValueMs(activeItemEndTime);
+  const activeItemRemainingSecs =
+    isBeingSubastado && activeItemEndMs
+      ? Math.max(0, Math.floor((activeItemEndMs - now) / 1000))
+      : null;
 
-  const productStateRaw = String(productDetails?.estado || product?.estado || productDetails?.condicion || product?.condicion || 'usado').toLowerCase();
+  const productData = { ...(product || {}), ...(productDetails || {}) };
+  const productStateRaw = String(productData.estado || productData.condicion || 'usado').toLowerCase();
   const isNuevo = productStateRaw === 'nuevo';
   const productStateLabel = isNuevo ? 'NUEVO' : 'USADO';
 
@@ -653,6 +917,235 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
     return isNaN(num) ? 0 : num;
   };
 
+  const getBidMaximumTotal = useCallback((currentVal, baseVal) => {
+    const category = String(subastaDetails?.categoria || '').toLowerCase();
+    if (!['comun', 'especial', 'plata'].includes(category)) {
+      return null;
+    }
+
+    const backendMax = cleanNumericPrice(activeItem?.pujaMaxima ?? activeItem?.puja_maxima);
+    if (backendMax > 0) {
+      return backendMax;
+    }
+
+    return currentVal + (baseVal * 0.20);
+  }, [activeItem, subastaDetails?.categoria]);
+
+  const getBidUserId = useCallback((bid) => (
+    bid?.idCliente ??
+    bid?.id_cliente ??
+    bid?.cliente ??
+    bid?.idUsuario ??
+    bid?.id_usuario ??
+    bid?.usuario
+  ), []);
+
+  const getBidAmount = useCallback((bid) => cleanNumericPrice(bid?.importe), []);
+
+  const getHighestBid = useCallback((bids) => {
+    return [...(bids || [])].sort((a, b) => {
+      const amountDiff = getBidAmount(b) - getBidAmount(a);
+      if (amountDiff !== 0) {
+        return amountDiff;
+      }
+
+      const bTime = getTimeValueMs(b.realizadaEn ?? b.realizada_en ?? b.fecha) || 0;
+      const aTime = getTimeValueMs(a.realizadaEn ?? a.realizada_en ?? a.fecha) || 0;
+      return bTime - aTime;
+    })[0] || null;
+  }, [getBidAmount]);
+
+  const findPurchaseForWonItem = useCallback(async () => {
+    const productId = getProductDetailId(product);
+    const productItemId = product.identificador ?? product.id;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const purchasesRes = await apiFetch('/v1/mi/compras?pagina=1&cantidad=50');
+      const purchasesList = Array.isArray(purchasesRes)
+        ? purchasesRes
+        : (purchasesRes?.datos ?? purchasesRes?.items ?? []);
+
+      const matchingPurchase = purchasesList.find((purchase) => {
+        const purchaseProductId =
+          purchase.producto ??
+          purchase.idProducto ??
+          purchase.id_producto ??
+          purchase.detallesProducto?.identificador;
+        const purchaseAuctionId =
+          purchase.subasta ??
+          purchase.idSubasta ??
+          purchase.id_subasta;
+
+        return (
+          (productId && Number(purchaseProductId) === Number(productId)) ||
+          (productItemId && Number(purchaseProductId) === Number(productItemId))
+        ) && (
+          !purchaseAuctionId ||
+          !subastaId ||
+          Number(purchaseAuctionId) === Number(subastaId)
+        );
+      });
+
+      if (matchingPurchase) {
+        return matchingPurchase;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+
+    return null;
+  }, [product, subastaId]);
+
+  const handleExpiredActiveItem = useCallback(async () => {
+    const itemId = activeItem?.idItem ?? activeItem?.id_item ?? product.identificador;
+    const localTopBid = getHighestBid(bidsList);
+    const localTopBidUserId = getBidUserId(localTopBid);
+    const didLocalUserWin =
+      currentUserId &&
+      localTopBidUserId &&
+      Number(localTopBidUserId) === Number(currentUserId);
+
+    if (didLocalUserWin && !localWinnerModalShownRef.current) {
+      localWinnerModalShownRef.current = true;
+      triggerWinnerModal({
+        importe:
+          localTopBid?.importe ??
+          activeItem?.mejorOferta ??
+          activeItem?.mejor_oferta ??
+          currentPriceStr,
+        moneda: currency,
+        comision: activeItem?.comision ?? product.comision,
+        costoEnvio: 0,
+        productoDetalle: productDetails || product,
+      });
+    }
+
+    const [latestBidsRes, latestItem, latestAuction] = await Promise.all([
+      getAuctionBids(subastaId, itemId, 1, 50, { isSubastador }).catch(() => null),
+      getActiveItem(subastaId, { isSubastador }).catch(() => null),
+      getAuctionDetails(subastaId, { isSubastador }).catch(() => null),
+    ]);
+
+    if (latestAuction) {
+      setSubastaDetails(latestAuction);
+    }
+
+    const latestBids = Array.isArray(latestBidsRes)
+      ? latestBidsRes
+      : (latestBidsRes?.datos ?? []);
+    const topBid = getHighestBid(latestBids.length ? latestBids : bidsList);
+    const topBidUserId = getBidUserId(topBid);
+    const didCurrentUserWin =
+      currentUserId &&
+      topBidUserId &&
+      Number(topBidUserId) === Number(currentUserId);
+
+    if (didCurrentUserWin) {
+      const purchase = await findPurchaseForWonItem();
+      const winnerRegistryId =
+        purchase?.identificador ??
+        purchase?.idRegistroSubasta ??
+        purchase?.id_registro_subasta ??
+        topBid?.idRegistroSubasta ??
+        topBid?.id_registro_subasta ??
+        topBid?.registroSubasta ??
+        topBid?.registro_subasta;
+
+      triggerWinnerModal({
+        idRegistroSubasta: winnerRegistryId,
+        importe:
+          purchase?.importe ??
+          topBid?.importe ??
+          activeItem?.mejorOferta ??
+          activeItem?.mejor_oferta ??
+          currentPriceStr,
+        moneda: purchase?.moneda ?? currency,
+        comision: purchase?.comision,
+        costoEnvio: purchase?.costoEnvio ?? purchase?.costo_envio,
+        productoDetalle: productDetails || product,
+      });
+      return;
+    }
+
+    const latestItemId = latestItem?.idItem ?? latestItem?.id_item;
+    const currentItemId = activeItem?.idItem ?? activeItem?.id_item;
+    const latestEndMs = getTimeValueMs(latestItem?.finalizaEn ?? latestItem?.finaliza_en);
+    const auctionStillOpen = latestAuction?.estado
+      ? latestAuction.estado === 'abierta'
+      : isAuctionActive;
+
+    if (
+      auctionStillOpen &&
+      latestItem &&
+      Number(latestItemId) !== Number(currentItemId) &&
+      (!latestEndMs || latestEndMs > Date.now())
+    ) {
+      triggerSwapBack();
+      return;
+    }
+
+    if (!auctionStillOpen || !latestItem) {
+      triggerAuctionList();
+      return;
+    }
+
+    triggerSwapBack();
+  }, [
+    activeItem,
+    bidsList,
+    currency,
+    currentPriceStr,
+    currentUserId,
+    findPurchaseForWonItem,
+    getBidUserId,
+    getHighestBid,
+    isAuctionActive,
+    isSubastador,
+    product.identificador,
+    product,
+    productDetails,
+    subastaId,
+    triggerAuctionList,
+    triggerSwapBack,
+    triggerWinnerModal,
+  ]);
+
+  useEffect(() => {
+    if (!isBeingSubastado || !activeItemEndMs || activeItemRemainingSecs !== 0) {
+      expirationCheckRef.current = false;
+      return;
+    }
+
+    if (expirationCheckRef.current) {
+      return;
+    }
+
+    expirationCheckRef.current = true;
+    let active = true;
+
+    const timeout = setTimeout(async () => {
+      try {
+        await handleExpiredActiveItem();
+      } catch (err) {
+        console.log('[Product Details] Error checking expired item:', err);
+        if (active) {
+          triggerSwapBack();
+        }
+      }
+    }, 0);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [
+    activeItemEndMs,
+    activeItemRemainingSecs,
+    handleExpiredActiveItem,
+    isBeingSubastado,
+    triggerSwapBack,
+  ]);
+
   // Handle Bid with specific increment option
   const isBiddingRef = useRef(false);
   const handleBidWithIncrement = async (inc) => {
@@ -660,13 +1153,13 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
 
     if (!bidPermission.canBid) {
       if (!isLoggedIn) {
-        alert('Debés iniciar sesión para poder pujar.');
+        alert('Debes iniciar sesion para poder pujar.');
       } else if (getCategoryRank(userCategory) < getCategoryRank(subastaDetails?.categoria)) {
         const userCatStr = (userCategory || 'comun').toUpperCase();
         const auctionCatStr = (subastaDetails?.categoria || 'comun').toUpperCase();
-        alert(`Tu categoría (${userCatStr}) es menor a la requerida para esta subasta (${auctionCatStr}).`);
+        alert(`Tu categoria (${userCatStr}) es menor a la requerida para esta subasta (${auctionCatStr}).`);
       } else if (hasVerifiedPaymentMethod === false) {
-        alert(`No tenés un medio de pago verificado y activo en ${currency} registrado. Por favor, agregalo en tu Perfil.`);
+        alert(`No tenes un medio de pago verificado y activo en ${currency} registrado. Por favor, agregalo en tu Perfil.`);
       }
       return;
     }
@@ -680,13 +1173,16 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
       const validMethod = chooseBidPaymentMethod(itemsList, currency);
 
       if (!validMethod) {
-        alert(`No tenés un medio de pago verificado y activo en ${currency} registrado. Por favor, agregalo en tu Perfil.`);
+        alert(`No tenes un medio de pago verificado y activo en ${currency} registrado. Por favor, agregalo en tu Perfil.`);
         return;
       }
 
       // Calculate total bid target price
       const currentVal = cleanNumericPrice(currentPriceStr) || Number(product.precioBase);
-      const newBidTotal = currentVal + inc;
+      const baseVal = cleanNumericPrice(product.precioBase || productDetails?.precioBase);
+      const maxTotal = getBidMaximumTotal(currentVal, baseVal);
+      const requestedTotal = currentVal + inc;
+      const newBidTotal = maxTotal ? Math.min(requestedTotal, maxTotal) : requestedTotal;
 
       // 2. Perform the bid
       await apiFetch(`/v1/subastas/${subastaId}/items/${product.identificador}/pujas`, {
@@ -706,21 +1202,26 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
 
   // Render 4 mini bid buttons (+1%, +5%, +10%, +20%)
   const renderBidOptions = (isModal = false) => {
-    const baseVal = Number(product.precioBase || productDetails?.precioBase || 0);
+    const currentVal = cleanNumericPrice(currentPriceStr) || Number(product.precioBase);
+    const baseVal = cleanNumericPrice(product.precioBase || productDetails?.precioBase || 0);
+    const maxTotal = getBidMaximumTotal(currentVal, baseVal);
+    const maxIncrement = maxTotal ? Math.max(0, maxTotal - currentVal) : null;
     const inc1 = Math.max(1, Math.round(baseVal * 0.01));
     const inc2 = Math.max(inc1 + 1, Math.round(baseVal * 0.05));
     const inc3 = Math.max(inc2 + 1, Math.round(baseVal * 0.10));
     const inc4 = Math.max(inc3 + 1, Math.round(baseVal * 0.20));
 
-    const options = [inc1, inc2, inc3, inc4];
+    const options = [inc1, inc2, inc3, inc4]
+      .map((inc) => (maxIncrement ? Math.min(inc, maxIncrement) : inc))
+      .filter((inc) => inc > 0)
+      .filter((inc, index, list) => list.indexOf(inc) === index);
     const isDisabled = !isBeingSubastado || !bidPermission.canBid;
 
     return (
       <View style={[styles.bidButtonsContainer, isModal && { paddingHorizontal: 0, marginTop: 12 }]}>
         <View style={styles.bidButtonsRow}>
           {options.map((inc, index) => {
-            const formattedInc = new Intl.NumberFormat('es-AR').format(inc);
-            const label = `$ ${formattedInc}`;
+            const label = formatPrice(inc);
 
             return (
               <Pressable
@@ -747,27 +1248,42 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
     );
   };
 
+  const productName =
+    cleanProductText(productData.nombre) ||
+    cleanProductText(productData.titulo) ||
+    cleanProductText(product.nombre) ||
+    cleanProductText(product.titulo) ||
+    'Producto sin nombre';
+  const catalogDescription =
+    cleanProductText(productData.descripcionCatalogo ?? productData.descripcion_catalogo) ||
+    cleanProductText(product.descripcionCatalogo ?? product.descripcion_catalogo);
+  const shortDescription =
+    cleanProductText(productData.descripcionBreve ?? productData.descripcion_breve) ||
+    catalogDescription;
+  const completeDescription =
+    cleanProductText(productData.descripcionCompleta ?? productData.descripcion_completa) ||
+    cleanProductText(product.descripcionCompleta ?? product.descripcion_completa);
+  const title = productName;
+  const sellerDisplayName =
+    sellerInfo?.nombre_usuario ||
+    sellerInfo?.nombreUsuario ||
+    sellerInfo?.username ||
+    sellerInfo?.nombre ||
+    null;
+  const sellerHandle = sellerDisplayName
+    ? `@${String(sellerDisplayName).replace(/^@/, '').toLowerCase()}`
+    : null;
+  const artisticDetails = productData.detalleArtistico ?? productData.detalle_artistico ?? null;
+  const components = Array.isArray(productData.componentes) ? productData.componentes : [];
+
   // UI photo mapping
-  const photosList = productDetails?.fotos ?? product?.fotos ?? [];
+  const photosList = getProductPhotos(productDetails, product);
 
   const getPhotoSource = (index) => {
     if (photosList.length > index) {
-      const path = photosList[index].foto ?? photosList[index].rutaArchivo ?? photosList[index].ruta_archivo;
-      if (path) {
-        return { uri: resolveApiAssetUrl(path) };
-      }
+      return photosList[index].source;
     }
     return null;
-  };
-
-  const getSellerLocation = () => {
-    if (!sellerInfo) return 'Ubicación a confirmar';
-    const city = sellerInfo.region || sellerInfo.ciudad;
-    const country = sellerInfo.pais?.nombre || 'Argentina';
-    if (city) {
-      return `${city} - ${country}`;
-    }
-    return country;
   };
 
   const handlePrevPhoto = () => {
@@ -829,7 +1345,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
         <>
           {img1Src && (
             <Animated.Image
-              key={photosList[startIndex]?.foto ?? `img_${startIndex}`}
+              key={photosList[startIndex]?.key ?? `img_${startIndex}`}
               source={img1Src}
               style={[
                 styles.mainImage,
@@ -847,7 +1363,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           )}
           {img2Src && (
             <Animated.Image
-              key={photosList[startIndex + 1]?.foto ?? `img_${startIndex + 1}`}
+              key={photosList[startIndex + 1]?.key ?? `img_${startIndex + 1}`}
               source={img2Src}
               style={[
                 styles.mainImage,
@@ -864,7 +1380,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           )}
           {img3Src && (
             <Animated.Image
-              key={photosList[startIndex + 2]?.foto ?? `img_${startIndex + 2}`}
+              key={photosList[startIndex + 2]?.key ?? `img_${startIndex + 2}`}
               source={img3Src}
               style={[
                 styles.thumbnailImage,
@@ -881,7 +1397,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           )}
           {img4Src && (
             <Animated.Image
-              key={photosList[startIndex + 3]?.foto ?? `img_${startIndex + 3}`}
+              key={photosList[startIndex + 3]?.key ?? `img_${startIndex + 3}`}
               source={img4Src}
               style={[
                 styles.thumbnailImage,
@@ -911,7 +1427,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
         <>
           {img0Src && (
             <Animated.Image
-              key={photosList[startIndex - 1]?.foto ?? `img_${startIndex - 1}`}
+              key={photosList[startIndex - 1]?.key ?? `img_${startIndex - 1}`}
               source={img0Src}
               style={[
                 styles.mainImage,
@@ -929,7 +1445,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           )}
           {img1Src && (
             <Animated.Image
-              key={photosList[startIndex]?.foto ?? `img_${startIndex}`}
+              key={photosList[startIndex]?.key ?? `img_${startIndex}`}
               source={img1Src}
               style={[
                 styles.thumbnailImage,
@@ -946,7 +1462,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           )}
           {img2Src && (
             <Animated.Image
-              key={photosList[startIndex + 1]?.foto ?? `img_${startIndex + 1}`}
+              key={photosList[startIndex + 1]?.key ?? `img_${startIndex + 1}`}
               source={img2Src}
               style={[
                 styles.thumbnailImage,
@@ -963,7 +1479,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           )}
           {img3Src && (
             <Animated.Image
-              key={photosList[startIndex + 2]?.foto ?? `img_${startIndex + 2}`}
+              key={photosList[startIndex + 2]?.key ?? `img_${startIndex + 2}`}
               source={img3Src}
               style={[
                 styles.thumbnailImage,
@@ -991,7 +1507,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
       <>
         {img1Src ? (
           <Animated.Image
-            key={photosList[startIndex]?.foto ?? `img_${startIndex}`}
+            key={photosList[startIndex]?.key ?? `img_${startIndex}`}
             source={img1Src}
             style={[
               styles.mainImage,
@@ -1033,7 +1549,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
 
         {img2Src ? (
           <Animated.Image
-            key={photosList[startIndex + 1]?.foto ?? `img_${startIndex + 1}`}
+            key={photosList[startIndex + 1]?.key ?? `img_${startIndex + 1}`}
             source={img2Src}
             style={[
               styles.thumbnailImage,
@@ -1075,7 +1591,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
 
         {img3Src ? (
           <Animated.Image
-            key={photosList[startIndex + 2]?.foto ?? `img_${startIndex + 2}`}
+            key={photosList[startIndex + 2]?.key ?? `img_${startIndex + 2}`}
             source={img3Src}
             style={[
               styles.thumbnailImage,
@@ -1129,10 +1645,6 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
       </>
     );
   };
-
-  const title = product.descripcionCatalogo
-    ? `${product.nombre || product.titulo} - ${product.descripcionCatalogo}`
-    : (product.nombre || product.titulo);
 
   if (isLoading) {
     return (
@@ -1214,6 +1726,19 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
 
         <Text style={styles.title}>{title}</Text>
 
+        {isBeingSubastado ? (
+          <View style={styles.activeTimeRow}>
+            <View style={styles.activeTimePill}>
+              <Text style={styles.activeTimeLabel}>Tiempo restante</Text>
+              <Text style={styles.activeTimeValue}>
+                {activeItemRemainingSecs !== null
+                  ? formatActiveItemTime(activeItemRemainingSecs)
+                  : 'Calculando...'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
         {!isBeingSubastado ? (
           <View style={styles.priceBelowTitleRow}>
             {isFinished ? (
@@ -1246,17 +1771,17 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
                     },
                   ]}
                 >
-                  ↑ {bidIncrement}
+                  + {bidIncrement}
                 </Animated.Text>
               </View>
 
               <View style={styles.priceDivider} />
 
-              <Text style={styles.secondaryLabel}>Puja mínima</Text>
+              <Text style={styles.secondaryLabel}>Puja minima</Text>
               <Text style={styles.secondaryValue}>{formatPrice(minBidVal)}</Text>
 
               <Text style={[styles.secondaryLabel, styles.highestLabel]}>
-                Tu puja más alta
+                Tu puja mas alta
               </Text>
               <Text style={styles.secondaryValue}>
                 {myHighestBid > 0 ? formatPrice(myHighestBid) : 'Ninguna'}
@@ -1304,7 +1829,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
               ) : (
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                   <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: palette.text, opacity: 0.6 }}>
-                    Sin pujas aún
+                    Sin pujas aun
                   </Text>
                 </View>
               )}
@@ -1324,7 +1849,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           ) : (
             <View style={[styles.sellerAvatar, { backgroundColor: colors.cardBlush, justifyContent: 'center', alignItems: 'center' }]}>
               <Text style={{ fontFamily: fonts.bold, color: colors.burgundy, fontSize: 18 }}>
-                {sellerInfo?.nombre?.charAt(0)?.toUpperCase() || 'S'}
+                {sellerDisplayName?.charAt(0)?.toUpperCase() || 'S'}
               </Text>
             </View>
           )}
@@ -1332,24 +1857,67 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
           <View style={styles.sellerCopy}>
             <Text style={styles.sellerText}>
               Publicado por{' '}
-              <Text style={styles.sellerName}>{sellerInfo?.nombre_usuario || sellerInfo?.nombre || 'Subastador'}</Text>
+              <Text style={styles.sellerName}>{sellerHandle || '-'}</Text>
             </Text>
-            <Text style={styles.sellerText}>{getSellerLocation()}</Text>
           </View>
         </View>
 
         <View style={styles.descriptionCard}>
           <Text style={styles.descriptionHeading}>Descripción del producto</Text>
-          <Text style={styles.descriptionBody}>
-            {productDetails?.descripcionCompleta ?? productDetails?.descripcion_completa ?? 'No hay descripción disponible para este producto.'}
-          </Text>
+
+          {shortDescription ? (
+            <View style={styles.descriptionSection}>
+              <Text style={styles.descriptionSectionTitle}>Descripción breve</Text>
+              <Text style={styles.descriptionBody}>{shortDescription}</Text>
+            </View>
+          ) : null}
+
+          {completeDescription ? (
+            <View style={styles.descriptionSection}>
+              <Text style={styles.descriptionSectionTitle}>Descripción completa</Text>
+              <Text style={styles.descriptionBody}>{completeDescription}</Text>
+            </View>
+          ) : null}
+
+          {!shortDescription && !completeDescription ? (
+            <Text style={styles.descriptionBody}>
+              No hay descripción disponible para este producto.
+            </Text>
+          ) : null}
 
           <View style={styles.descriptionDivider} />
 
           <DescriptionItem
-            detail={productDetails?.estado === 'nuevo' ? 'Completamente nuevo, sin uso anterior.' : 'En buen estado, usado previamente.'}
-            title={`Estado del artículo: ${productDetails?.estado || 'usado'}`}
+            detail={isNuevo ? 'Completamente nuevo, sin uso anterior.' : 'En buen estado, usado previamente.'}
+            title={`Estado del artículo: ${productStateRaw || 'usado'}`}
           />
+
+          {artisticDetails?.artista ? (
+            <DescriptionItem
+              detail={artisticDetails.artista}
+              title="Artista o diseñador:"
+            />
+          ) : null}
+          {(artisticDetails?.fechaObra || artisticDetails?.fecha_obra) ? (
+            <DescriptionItem
+              detail={artisticDetails.fechaObra || artisticDetails.fecha_obra}
+              title="Fecha o período:"
+            />
+          ) : null}
+          {artisticDetails?.historia ? (
+            <DescriptionItem
+              detail={artisticDetails.historia}
+              title="Historia y procedencia:"
+            />
+          ) : null}
+          {components.length > 0 ? (
+            <DescriptionItem
+              detail={components
+                .map((component) => `${component.descripcion}${component.cantidad ? ` x${component.cantidad}` : ''}`)
+                .join('\n')}
+              title="Componentes:"
+            />
+          ) : null}
         </View>
       </View>
 
@@ -1366,13 +1934,13 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
             <View style={styles.cameraModalHeader}>
               <View style={styles.cameraModalHeaderTitleRow}>
                 <LiveIcon />
-                <Text style={styles.cameraModalTitle}>TRANSMISIÓN EN VIVO</Text>
+                <Text style={styles.cameraModalTitle}>TRANSMISION EN VIVO</Text>
               </View>
               <Pressable
                 onPress={() => setShowLiveCameraModal(false)}
                 style={styles.cameraModalCloseBtn}
               >
-                <Text style={styles.cameraModalCloseText}>✕</Text>
+                <Text style={styles.cameraModalCloseText}>x</Text>
               </Pressable>
             </View>
 
@@ -1390,7 +1958,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
                 >
                   <Text style={styles.cameraBidNotificationText}>
                     <Text style={{ fontFamily: fonts.bold }}>{latestCameraBid.bidder}</Text>
-                    {' pujó '}
+                    {' pujo '}
                     <Text style={{ fontFamily: fonts.bold, color: '#3FA54B' }}>{latestCameraBid.amount}</Text>
                   </Text>
                 </Animated.View>
@@ -1478,6 +2046,39 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 18,
     width: '100%',
+  },
+  activeTimeRow: {
+    alignItems: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 18,
+    width: '100%',
+  },
+  activeTimePill: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: palette.card,
+    borderColor: 'rgba(177, 0, 36, 0.18)',
+    borderRadius: 6,
+    borderWidth: 1,
+    columnGap: 8,
+    flexDirection: 'row',
+    minHeight: 34,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  activeTimeLabel: {
+    color: palette.text,
+    fontFamily: fonts.medium,
+    fontSize: 13,
+    letterSpacing: 0,
+    lineHeight: 17,
+  },
+  activeTimeValue: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    letterSpacing: 0,
+    lineHeight: 20,
   },
   priceBelowTitleRow: {
     flexDirection: 'row',
@@ -1752,6 +2353,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 0,
     lineHeight: 20,
+  },
+  descriptionSection: {
+    marginTop: 10,
+  },
+  descriptionSectionTitle: {
+    color: '#000000',
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    letterSpacing: 0,
+    lineHeight: 19,
+    marginBottom: 3,
   },
   descriptionDivider: {
     backgroundColor: 'rgba(0, 0, 0, 0.12)',

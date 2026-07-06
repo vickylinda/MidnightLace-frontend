@@ -3,6 +3,9 @@ export const API_BASE_URL =
 
 export const API_KEY = process.env.EXPO_PUBLIC_API_KEY || '';
 
+export const ENVIOSPACK_API_KEY = process.env.EXPO_PUBLIC_ENVIOSPACK_API_KEY || '';
+export const ENVIOSPACK_SECRET_KEY = process.env.EXPO_PUBLIC_ENVIOSPACK_SECRET_KEY || '';
+
 export function resolveApiAssetUrl(value) {
   if (!value) {
     return '';

@@ -22,6 +22,22 @@ function isPermissionError(error) {
   );
 }
 
+function parseNotificationDetail(detail) {
+  if (!detail) {
+    return {};
+  }
+
+  if (typeof detail === 'string') {
+    try {
+      return JSON.parse(detail);
+    } catch {
+      return {};
+    }
+  }
+
+  return detail;
+}
+
 export function NotificationsProvider({ children }) {
   const [notifications, setNotifications] = useState([]);
   const [lastEvent, setLastEvent] = useState(null);
@@ -33,7 +49,7 @@ export function NotificationsProvider({ children }) {
 
   function eventFromNotification(notification) {
     return {
-      datos: notification?.detalle || {},
+      datos: parseNotificationDetail(notification?.detalle),
       evento: notification?.tipo,
       notificationId: notification?.identificador,
       receivedAt: Date.now(),

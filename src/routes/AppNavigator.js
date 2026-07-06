@@ -374,7 +374,15 @@ export default function AppNavigator() {
     return null;
   }
 
-  const performSwapBack = useCallback(() => {
+  const performSwapBack = useCallback((options = {}) => {
+    if (options?.target === 'auctions') {
+      setIsLoading(false);
+      setRouteHistory([]);
+      setCurrentRoute(ROUTES.auctions);
+      updateBrowserRoute(ROUTES.auctions, true);
+      return;
+    }
+
     const previousRoute =
       routeHistory[routeHistory.length - 1] || getFallbackBackRoute(currentRoute);
 
@@ -393,8 +401,15 @@ export default function AppNavigator() {
       const handleSwap = () => {
         performSwapBack();
       };
+      const handleGoToList = () => {
+        performSwapBack({ target: 'auctions' });
+      };
       window.addEventListener('auction_swap_back', handleSwap);
-      return () => window.removeEventListener('auction_swap_back', handleSwap);
+      window.addEventListener('auction_go_to_list', handleGoToList);
+      return () => {
+        window.removeEventListener('auction_swap_back', handleSwap);
+        window.removeEventListener('auction_go_to_list', handleGoToList);
+      };
     }
   }, [performSwapBack]);
 
@@ -408,7 +423,10 @@ export default function AppNavigator() {
   }
 
   function handleAuctionProductPress(product) {
-    setSelectedAuctionProduct(product);
+    setSelectedAuctionProduct({
+      ...product,
+      monedaSubasta: selectedAuction?.moneda,
+    });
     navigateTo(ROUTES.auctionProduct);
   }
 
@@ -525,6 +543,7 @@ export default function AppNavigator() {
         selectedAuctionProduct ? (
           <AuctionProductScreen
             product={selectedAuctionProduct}
+            isSubastador={isSubastador}
             subastaId={selectedAuction?.identificador ?? selectedAuction?.id}
             onAuctionFinished={performSwapBack}
           />
@@ -533,6 +552,7 @@ export default function AppNavigator() {
         selectedAuction ? (
           <AuctionDetailScreen
             auction={selectedAuction}
+            isSubastador={isSubastador}
             onProductPress={handleAuctionProductPress}
           />
         ) : null

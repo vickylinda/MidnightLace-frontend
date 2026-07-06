@@ -77,8 +77,12 @@ export default function ProductStatusCard({
             </View>
           </View>
 
-          {statusNote ? <Text style={styles.statusNote}>{statusNote}</Text> : null}
-          {description ? <Text style={styles.description}>{description}</Text> : null}
+          {statusNote ? <Text numberOfLines={1} style={styles.statusNote}>{statusNote}</Text> : null}
+          {description ? (
+            <Text numberOfLines={3} style={styles.description}>
+              {description}
+            </Text>
+          ) : null}
         </View>
       </BodyContainer>
       {action ? <View style={styles.action}>{action}</View> : null}
@@ -166,7 +170,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 13,
+    marginTop: 8,
   },
   statusNote: {
     color: colors.cocoa,

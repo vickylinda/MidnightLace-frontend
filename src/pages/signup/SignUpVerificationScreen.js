@@ -117,7 +117,7 @@ export default function SignUpVerificationScreen({ email, onVerified }) {
     <View style={styles.screen}>
       <SignUpProgress currentStep={2} />
 
-      <Text style={styles.title}>Setear contrasenia</Text>
+      <Text style={styles.title}>Setear contraseña</Text>
       <Text style={styles.description}>
         Ingresa el mail con el que te registraste y el codigo que recibiste por
         correo cuando tu cuenta fue aceptada.
