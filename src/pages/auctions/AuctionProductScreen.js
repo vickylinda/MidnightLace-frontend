@@ -27,7 +27,7 @@ import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { apiFetch } from '../../utils/http';
-import { getAccessToken } from '../../utils/session';
+import { getAccessToken, hasRole } from '../../utils/session';
 import { API_BASE_URL, resolveApiAssetUrl } from '../../utils/config';
 import { formatMoney } from '../../utils/money';
 import {
@@ -51,7 +51,15 @@ function getCategoryRank(catName) {
   return index >= 0 ? index : 0;
 }
 
-function checkCanBid({ isLoggedIn, userCategory, auctionCategory, hasVerifiedPaymentMethod }) {
+function checkCanBid({ isLoggedIn, isSubastador, userCategory, auctionCategory, hasVerifiedPaymentMethod }) {
+  if (isSubastador) {
+    return {
+      canBid: false,
+      reason: 'SUBASTADOR',
+      buttonText: null,
+    };
+  }
+
   if (!isLoggedIn) {
     return {
       canBid: false,
@@ -500,6 +508,7 @@ export default function AuctionProductScreen({
   const cameraBidFadeAnim = useRef(new Animated.Value(0)).current;
   const cameraBidSlideAnim = useRef(new Animated.Value(15)).current;
   const newBidPushAnim = useRef(new Animated.Value(1)).current;
+  const timeExtensionAnim = useRef(new Animated.Value(0)).current;
   const [latestCameraBid, setLatestCameraBid] = useState(null);
   const expirationCheckRef = useRef(false);
   const localWinnerModalShownRef = useRef(false);
@@ -533,6 +542,28 @@ export default function AuctionProductScreen({
       onAuctionFinished({ target: 'auctions' });
     }
   }, [onAuctionFinished]);
+
+  const triggerTimeExtensionAnimation = useCallback(() => {
+    timeExtensionAnim.stopAnimation();
+    timeExtensionAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(timeExtensionAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.delay(420),
+      Animated.timing(timeExtensionAnim, {
+        toValue: 2,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        timeExtensionAnim.setValue(0);
+      }
+    });
+  }, [timeExtensionAnim]);
 
   // Format price helper
   const formatPrice = (amount, curr) => {
@@ -723,6 +754,7 @@ export default function AuctionProductScreen({
               const newPrice = cleanNumericPrice(datos.importe);
               const diff = newPrice > previousPrice ? (newPrice - previousPrice) : cleanNumericPrice(datos.incremento ?? datos.pujaMinima ?? 0);
               
+              triggerTimeExtensionAnimation();
               setCurrentPriceStr(String(newPrice));
               setMinBidVal(Number(datos.pujaMinima ?? datos.puja_minima));
               setActiveItem((current) => {
@@ -742,6 +774,8 @@ export default function AuctionProductScreen({
                   mejor_oferta: datos.importe,
                   pujaMinima: datos.pujaMinima ?? datos.puja_minima,
                   puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                  pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
+                  puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
                   finalizaEn: nextEndTime,
                   finaliza_en: nextEndTime,
                 };
@@ -827,6 +861,7 @@ export default function AuctionProductScreen({
     productDetails,
     subastaDetails,
     subastaId,
+    triggerTimeExtensionAnimation,
     triggerSwapBack,
     triggerWinnerModal,
   ]);
@@ -897,14 +932,27 @@ export default function AuctionProductScreen({
     isBeingSubastado && activeItemEndMs
       ? Math.max(0, Math.floor((activeItemEndMs - now) / 1000))
       : null;
+  const timeExtensionOpacity = timeExtensionAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [0, 1, 0],
+    extrapolate: 'clamp',
+  });
+  const timeExtensionTranslateY = timeExtensionAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [5, 0, 5],
+    extrapolate: 'clamp',
+  });
 
   const productData = { ...(product || {}), ...(productDetails || {}) };
   const productStateRaw = String(productData.estado || productData.condicion || 'usado').toLowerCase();
   const isNuevo = productStateRaw === 'nuevo';
   const productStateLabel = isNuevo ? 'NUEVO' : 'USADO';
 
+  const userIsSubastador = isSubastador || hasRole('subastador') || hasRole('SUBASTADOR');
+
   const bidPermission = checkCanBid({
     isLoggedIn,
+    isSubastador: userIsSubastador,
     userCategory,
     auctionCategory: subastaDetails?.categoria,
     hasVerifiedPaymentMethod,
@@ -1149,7 +1197,7 @@ export default function AuctionProductScreen({
   // Handle Bid with specific increment option
   const isBiddingRef = useRef(false);
   const handleBidWithIncrement = async (inc) => {
-    if (!isBeingSubastado || isBiddingRef.current) return;
+    if (!isBeingSubastado || isBiddingRef.current || userIsSubastador) return;
 
     if (!bidPermission.canBid) {
       if (!isLoggedIn) {
@@ -1202,19 +1250,17 @@ export default function AuctionProductScreen({
 
   // Render 4 mini bid buttons (+1%, +5%, +10%, +20%)
   const renderBidOptions = (isModal = false) => {
-    const currentVal = cleanNumericPrice(currentPriceStr) || Number(product.precioBase);
-    const baseVal = cleanNumericPrice(product.precioBase || productDetails?.precioBase || 0);
-    const maxTotal = getBidMaximumTotal(currentVal, baseVal);
-    const maxIncrement = maxTotal ? Math.max(0, maxTotal - currentVal) : null;
-    const inc1 = Math.max(1, Math.round(baseVal * 0.01));
-    const inc2 = Math.max(inc1 + 1, Math.round(baseVal * 0.05));
-    const inc3 = Math.max(inc2 + 1, Math.round(baseVal * 0.10));
-    const inc4 = Math.max(inc3 + 1, Math.round(baseVal * 0.20));
+    if (userIsSubastador) {
+      return null;
+    }
 
-    const options = [inc1, inc2, inc3, inc4]
-      .map((inc) => (maxIncrement ? Math.min(inc, maxIncrement) : inc))
-      .filter((inc) => inc > 0)
-      .filter((inc, index, list) => list.indexOf(inc) === index);
+    const baseVal = cleanNumericPrice(product.precioBase || productDetails?.precioBase || 0);
+    const inc1 = Math.max(0.01, Number((baseVal * 0.01).toFixed(2)));
+    const inc2 = Math.max(inc1 + 0.01, Number((baseVal * 0.05).toFixed(2)));
+    const inc3 = Math.max(inc2 + 0.01, Number((baseVal * 0.10).toFixed(2)));
+    const inc4 = Math.max(inc3 + 0.01, Number((baseVal * 0.20).toFixed(2)));
+
+    const options = [inc1, inc2, inc3, inc4];
     const isDisabled = !isBeingSubastado || !bidPermission.canBid;
 
     return (
@@ -1736,6 +1782,17 @@ export default function AuctionProductScreen({
                   : 'Calculando...'}
               </Text>
             </View>
+            <Animated.Text
+              style={[
+                styles.activeTimeExtensionBadge,
+                {
+                  opacity: timeExtensionOpacity,
+                  transform: [{ translateY: timeExtensionTranslateY }],
+                },
+              ]}
+            >
+              +5
+            </Animated.Text>
           </View>
         ) : null}
 
@@ -1865,58 +1922,38 @@ export default function AuctionProductScreen({
         <View style={styles.descriptionCard}>
           <Text style={styles.descriptionHeading}>Descripción del producto</Text>
 
-          {shortDescription ? (
-            <View style={styles.descriptionSection}>
-              <Text style={styles.descriptionSectionTitle}>Descripción breve</Text>
-              <Text style={styles.descriptionBody}>{shortDescription}</Text>
-            </View>
-          ) : null}
-
           {completeDescription ? (
-            <View style={styles.descriptionSection}>
-              <Text style={styles.descriptionSectionTitle}>Descripción completa</Text>
-              <Text style={styles.descriptionBody}>{completeDescription}</Text>
-            </View>
-          ) : null}
-
-          {!shortDescription && !completeDescription ? (
-            <Text style={styles.descriptionBody}>
+            <Text style={[styles.descriptionBody, { marginTop: 8 }]}>{completeDescription}</Text>
+          ) : (
+            <Text style={[styles.descriptionBody, { marginTop: 8 }]}>
               No hay descripción disponible para este producto.
             </Text>
-          ) : null}
+          )}
 
-          <View style={styles.descriptionDivider} />
-
-          <DescriptionItem
-            detail={isNuevo ? 'Completamente nuevo, sin uso anterior.' : 'En buen estado, usado previamente.'}
-            title={`Estado del artículo: ${productStateRaw || 'usado'}`}
-          />
-
-          {artisticDetails?.artista ? (
-            <DescriptionItem
-              detail={artisticDetails.artista}
-              title="Artista o diseñador:"
-            />
-          ) : null}
-          {(artisticDetails?.fechaObra || artisticDetails?.fecha_obra) ? (
-            <DescriptionItem
-              detail={artisticDetails.fechaObra || artisticDetails.fecha_obra}
-              title="Fecha o período:"
-            />
-          ) : null}
-          {artisticDetails?.historia ? (
-            <DescriptionItem
-              detail={artisticDetails.historia}
-              title="Historia y procedencia:"
-            />
-          ) : null}
-          {components.length > 0 ? (
-            <DescriptionItem
-              detail={components
-                .map((component) => `${component.descripcion}${component.cantidad ? ` x${component.cantidad}` : ''}`)
-                .join('\n')}
-              title="Componentes:"
-            />
+          {Array.isArray(productDetails?.componentes) && productDetails.componentes.length > 0 ? (
+            productDetails.componentes.map((comp, idx) => {
+              const compTitle = comp.nombre || comp.titulo || `Pieza ${idx + 1}`;
+              const compDetail = comp.descripcion || comp.detalle || (comp.estado ? `Estado: ${comp.estado}` : '');
+              return (
+                <DescriptionItem
+                  key={comp.identificador || idx}
+                  title={compTitle}
+                  detail={compDetail}
+                />
+              );
+            })
+          ) : Array.isArray(product?.componentes) && product.componentes.length > 0 ? (
+            product.componentes.map((comp, idx) => {
+              const compTitle = comp.nombre || comp.titulo || `Pieza ${idx + 1}`;
+              const compDetail = comp.descripcion || comp.detalle || (comp.estado ? `Estado: ${comp.estado}` : '');
+              return (
+                <DescriptionItem
+                  key={comp.identificador || idx}
+                  title={compTitle}
+                  detail={compDetail}
+                />
+              );
+            })
           ) : null}
         </View>
       </View>
@@ -2048,7 +2085,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   activeTimeRow: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    flexDirection: 'row',
     marginTop: 8,
     paddingHorizontal: 18,
     width: '100%',
@@ -2079,6 +2117,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0,
     lineHeight: 20,
+  },
+  activeTimeExtensionBadge: {
+    color: colors.statusGreenBorder,
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    lineHeight: 17,
+    marginLeft: 7,
+    minWidth: 20,
   },
   priceBelowTitleRow: {
     flexDirection: 'row',

@@ -12,19 +12,19 @@ import {
 import Svg, { Path } from 'react-native-svg';
 
 import {
-  getAuctionBids,
   getAuctionCatalog,
   getAuctionDetails,
   getActiveItem,
   startAuctionNow,
+  getAuctionBids,
 } from '../../services/auctionsApi';
-import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
 import SubastadoStamp from '../../components/status/SubastadoStamp';
+import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
-import { getAccessToken } from '../../utils/session';
-import { formatMoney } from '../../utils/money';
+import { apiFetch } from '../../utils/http';
+import { getAccessToken, getUserId } from '../../utils/session';
 
 const referenceColors = {
   card: '#F6E3D1',
@@ -32,6 +32,25 @@ const referenceColors = {
 };
 
 const CATALOG_PAGE_SIZE = 6;
+const BID_TIME_EXTENSION_SECONDS = 5;
+const BID_TIME_EXTENSION_MS = BID_TIME_EXTENSION_SECONDS * 1000;
+
+function filterEnSubastaLots(items) {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item) => {
+    const estadoProd =
+      item?.estadoProducto ??
+      item?.estado_producto ??
+      item?.producto?.estadoProducto ??
+      item?.producto?.estado_producto;
+
+    if (!estadoProd) return true;
+
+    const norm = String(estadoProd).toLowerCase().trim();
+    return norm !== 'pendiente_confirmacion' && norm !== 'pendienteconfirmacion';
+  });
+}
+
 function LocationPinIcon({ size = 31 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 31 31" fill="none">
@@ -43,35 +62,23 @@ function LocationPinIcon({ size = 31 }) {
   );
 }
 
-function formatPrice(value, currency) {
-  return formatMoney(value, currency);
-}
-
-function getUserId() {
-  const token = getAccessToken();
-  if (!token) return null;
-  try {
-    const payloadPart = token.split('.')[1];
-    if (!payloadPart) return null;
-    const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-    let str = base64.replace(/=+$/, '');
-    let bc = 0;
-    let bs = 0;
-    let result = '';
-    for (let idx = 0; idx < str.length; idx += 1) {
-      const char = str.charAt(idx);
-      const pos = chars.indexOf(char);
-      if (pos === -1) continue;
-      bs = bc % 4 ? bs * 64 + pos : pos;
-      if (bc++ % 4) {
-        result += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)));
-      }
-    }
-    return JSON.parse(result).sub;
-  } catch {
-    return null;
+function formatPrice(value) {
+  if (value === undefined || value === null || value === '') {
+    return '-';
   }
+
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return value ?? '-';
+  }
+
+  const formattedAmount = new Intl.NumberFormat('es-AR', {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(amount);
+
+  return `$ ${formattedAmount}`;
 }
 
 function getAuctionStartDate(dateValue, timeValue) {
@@ -200,7 +207,7 @@ function TimeExtensionBadge({ animation, variant = 'card' }) {
   });
   const translateY = animation.interpolate({
     inputRange: [0, 1, 2],
-    outputRange: [8, -6, 5],
+    outputRange: [5, 0, 5],
     extrapolate: 'clamp',
   });
 
@@ -215,7 +222,7 @@ function TimeExtensionBadge({ animation, variant = 'card' }) {
         },
       ]}
     >
-      +0
+      +5
     </Animated.Text>
   );
 }
@@ -827,41 +834,68 @@ export default function AuctionDetailScreen({
     let active = true;
 
     getActiveItem(resolvedAuctionId, { isSubastador })
-      .then(async (data) => {
+      .then((data) => {
         if (active) {
           setActiveItem(data);
-          const activeItemId = data?.idItem ?? data?.id_item;
-          if (activeItemId) {
-            try {
-              const bidsRes = await getAuctionBids(
-                resolvedAuctionId,
-                activeItemId,
-                1,
-                20,
-                { isSubastador }
-              );
-              const bidsList = Array.isArray(bidsRes) ? bidsRes : (bidsRes?.datos ?? []);
-              const totalCount = bidsRes?.meta?.total ?? bidsList.length;
-              
-              const recentBidders = [...bidsList].reverse().map((b) => ({
-                id: b.identificador,
-                name: b.nombreUsuario ?? b.nombre_usuario ?? 'Comprador',
-                photo: b.fotoPerfil ?? b.urlFotoPerfil ?? b.foto_perfil ?? b.url_foto_perfil ?? null,
-              })).slice(0, 4);
-
-              setRecentBiddersMap((prevMap) => ({
-                ...prevMap,
-                [activeItemId]: { totalCount, recentBidders },
-              }));
-            } catch (err) {
-              console.log('Error loading initial bids for active item:', err);
-            }
-          }
         }
       })
       .catch((err) => {
         console.log('Error fetching active item:', err);
       });
+  }, [isSubastador, resolvedAuctionId, auctionDetails?.estado]);
+
+  useEffect(() => {
+    const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
+    if (!resolvedAuctionId || !activeItemId) {
+      return undefined;
+    }
+
+    let active = true;
+
+    getAuctionBids(
+      resolvedAuctionId,
+      activeItemId,
+      1,
+      20,
+      { isSubastador }
+    )
+      .then((bidsRes) => {
+        if (active) {
+          const bidsList = Array.isArray(bidsRes) ? bidsRes : (bidsRes?.datos ?? []);
+          const totalCount = bidsRes?.meta?.total ?? bidsList.length;
+
+          const recentBidders = [...bidsList].reverse().map((b) => ({
+            id: b.identificador ?? b.idPuja ?? Date.now(),
+            name: b.nombreUsuario ?? b.nombre_usuario ?? 'Comprador',
+            photo: b.fotoPerfil ?? b.urlFotoPerfil ?? b.foto_perfil ?? b.url_foto_perfil ?? null,
+          })).slice(0, 4);
+
+          setRecentBiddersMap((prevMap) => ({
+            ...prevMap,
+            [activeItemId]: { totalCount, recentBidders },
+          }));
+        }
+      })
+      .catch((err) => {
+        console.log('Error loading bids for active item:', err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [resolvedAuctionId, activeItem?.idItem, activeItem?.id_item, isSubastador]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (resolvedAuctionId === undefined || resolvedAuctionId === null) {
+      return undefined;
+    }
+
+    if (auctionDetails?.estado !== 'abierta') {
+      setWsStatus('disconnected');
+      return undefined;
+    }
 
     const wsBase = API_BASE_URL.replace(/^http/, 'ws');
     const token = getAccessToken();
@@ -906,29 +940,46 @@ export default function AuctionDetailScreen({
               };
             });
 
-            setActiveItem((current) => {
-              const currentIdItem = current?.idItem ?? current?.id_item;
-              if (current && Number(currentIdItem) === Number(datosIdItem)) {
-                const nextEndTime =
-                  datos.finalizaEn ??
-                  datos.finaliza_en ??
-                  current.finalizaEn ??
-                  current.finaliza_en;
-                return {
-                  ...current,
-                  mejorOferta: datos.importe,
-                  mejor_oferta: datos.importe,
-                  pujaMinima: datos.pujaMinima ?? datos.puja_minima,
-                  puja_minima: datos.pujaMinima ?? datos.puja_minima,
-                  pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
-                  puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
-                  finalizaEn: nextEndTime,
-                  finaliza_en: nextEndTime,
-                };
-              }
-              return current;
-            });
-          }
+             if (isBidForActiveItem) {
+               triggerTimeExtensionAnimation();
+             }
+
+             setLots((currentLots) =>
+               currentLots.map((lot) => {
+                 if (Number(lot.identificador) === Number(datosIdItem)) {
+                   return {
+                     ...lot,
+                     mejorOferta: datos.importe,
+                     mejor_oferta: datos.importe,
+                   };
+                 }
+                 return lot;
+               })
+             );
+
+             setActiveItem((current) => {
+               const currentIdItem = current?.idItem ?? current?.id_item;
+               if (current && Number(currentIdItem) === Number(datosIdItem)) {
+                 const nextEndTime =
+                   datos.finalizaEn ??
+                   datos.finaliza_en ??
+                   current.finalizaEn ??
+                   current.finaliza_en;
+                 return {
+                   ...current,
+                   mejorOferta: datos.importe,
+                   mejor_oferta: datos.importe,
+                   pujaMinima: datos.pujaMinima ?? datos.puja_minima,
+                   puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                   pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
+                   puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
+                   finalizaEn: nextEndTime,
+                   finaliza_en: nextEndTime,
+                 };
+               }
+               return current;
+             });
+           }
         } else if (message.evento === 'pujaGanadora') {
           const datos = message.datos;
           const winnerItemId = datos?.idItem ?? datos?.id_item;
@@ -1016,15 +1067,7 @@ export default function AuctionDetailScreen({
         wsRef.current = null;
       }
     };
-  }, [
-    currentUserId,
-    isSubastador,
-    resolvedAuctionId,
-    auctionDetails?.estado,
-    timeExtensionAnim,
-    triggerWinnerForItem,
-    triggerTimeExtensionAnimation,
-  ]);
+  }, [resolvedAuctionId, auctionDetails?.estado, timeExtensionAnim, triggerTimeExtensionAnimation]);
 
   async function handleLoadMore() {
     if (!hasMoreLots || isLoadingMore) {
@@ -1202,62 +1245,70 @@ export default function AuctionDetailScreen({
           <View style={styles.feedbackCard}>
             <Text style={styles.feedbackText}>{errorMessage}</Text>
           </View>
-        ) : lots.length === 0 ? (
-          <View style={styles.feedbackCard}>
-            <Text style={styles.feedbackText}>
-              Esta subasta todavia no tiene productos en su catalogo.
-            </Text>
-          </View>
-        ) : (
-          <>
-            <View style={styles.lotList}>
-              {lots.map((lot, index) => {
-                const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
-                const isActive = activeItem && activeItemId && Number(lot.identificador) === Number(activeItemId);
-                const isFinished = lot.subastado === 'si';
-                return (
-                  <ProductLotCard
-                    currency={lot.moneda ?? auctionDetails?.moneda}
-                    imageSize={imageSize}
-                    key={String(lot.identificador ?? lot.idProducto ?? index)}
-                    lot={lot}
-                    onPress={() => onProductPress?.({ ...lot, monedaSubasta: auctionDetails?.moneda })}
-                    isActive={isActive}
-                    isFinished={isFinished}
-                    activeItemData={activeItem}
-                    timeExtensionAnimation={timeExtensionAnim}
-                    now={now + serverTimeOffsetRef.current}
-                    biddersInfo={recentBiddersMap[lot.identificador] || recentBiddersMap[lot.idProducto]}
-                  />
-                );
-              })}
-            </View>
+        ) : (() => {
+          const visibleLots = filterEnSubastaLots(lots);
 
-            {loadMoreError ? (
-              <Text style={styles.loadMoreError}>{loadMoreError}</Text>
-            ) : null}
+          if (visibleLots.length === 0) {
+            return (
+              <View style={styles.feedbackCard}>
+                <Text style={styles.feedbackText}>
+                  Esta subasta todavia no tiene productos en su catalogo.
+                </Text>
+              </View>
+            );
+          }
 
-            {hasMoreLots ? (
-              <Pressable
-                accessibilityLabel="Ver más productos"
-                accessibilityRole="button"
-                disabled={isLoadingMore}
-                onPress={handleLoadMore}
-                style={({ pressed }) => [
-                  styles.loadMoreButton,
-                  pressed ? styles.loadMoreButtonPressed : null,
-                  isLoadingMore ? styles.loadMoreButtonDisabled : null,
-                ]}
-              >
-                {isLoadingMore ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text style={styles.loadMoreText}>Ver más</Text>
-                )}
-              </Pressable>
-            ) : null}
-          </>
-        )}
+          return (
+            <>
+              <View style={styles.lotList}>
+                {visibleLots.map((lot, index) => {
+                  const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
+                  const isActive = activeItem && activeItemId && Number(lot.identificador) === Number(activeItemId);
+                  const isFinished = lot.subastado === 'si';
+                  return (
+                    <ProductLotCard
+                      currency={auctionDetails?.moneda}
+                      imageSize={imageSize}
+                      key={String(lot.identificador ?? lot.idProducto ?? index)}
+                      lot={lot}
+                      onPress={() => onProductPress?.(lot)}
+                      isActive={isActive}
+                      isFinished={isFinished}
+                      activeItemData={activeItem}
+                      timeExtensionAnimation={timeExtensionAnim}
+                      now={now + serverTimeOffsetRef.current}
+                      biddersInfo={recentBiddersMap[lot.identificador] || recentBiddersMap[lot.idProducto]}
+                    />
+                  );
+                })}
+              </View>
+
+              {loadMoreError ? (
+                <Text style={styles.loadMoreError}>{loadMoreError}</Text>
+              ) : null}
+
+              {hasMoreLots ? (
+                <Pressable
+                  accessibilityLabel="Ver más productos"
+                  accessibilityRole="button"
+                  disabled={isLoadingMore}
+                  onPress={handleLoadMore}
+                  style={({ pressed }) => [
+                    styles.loadMoreButton,
+                    pressed ? styles.loadMoreButtonPressed : null,
+                    isLoadingMore ? styles.loadMoreButtonDisabled : null,
+                  ]}
+                >
+                  {isLoadingMore ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Ver más</Text>
+                  )}
+                </Pressable>
+              ) : null}
+            </>
+          );
+        })()}
       </View>
     </View>
   );
@@ -1313,10 +1364,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     width: '100%',
   },
-  countdownBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
   countdownLabel: {
     color: colors.burgundy,
     fontFamily: fonts.regular,
@@ -1338,7 +1385,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   timeExtensionBadge: {
-    color: colors.burgundy,
+    color: colors.statusGreenBorder,
     fontFamily: fonts.bold,
     fontSize: 12,
     lineHeight: 16,
@@ -1739,3 +1786,5 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 });
+
+
