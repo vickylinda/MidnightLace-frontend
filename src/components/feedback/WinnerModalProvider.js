@@ -23,12 +23,13 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
-import { quoteHomeShipping } from '../../services/shippingApi';
 import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
 import { API_BASE_URL, resolveApiAssetUrl } from '../../utils/config';
 import { formatMoney } from '../../utils/money';
 import { useNotifications } from '../../context/NotificationsContext';
+
+const HOME_SHIPPING_COST = 8000;
 
 function normalizeCurrency(value) {
   return String(value || '').trim().toUpperCase();
@@ -48,6 +49,24 @@ function formatShippingTotal(productAmount, shippingAmount, currency) {
 }
 
 function getDepositAddress(product) {
+  const depositName =
+    product?.depositoNombre ||
+    product?.deposito_nombre ||
+    '';
+  const depositDirection =
+    product?.depositoDireccion ||
+    product?.deposito_direccion ||
+    product?.direccionDeposito ||
+    product?.direccion_deposito ||
+    '';
+
+  if (depositName || depositDirection) {
+    return {
+      addressText: depositDirection,
+      name: depositName,
+    };
+  }
+
   const deposit =
     product?.deposito ||
     product?.depositoAsignado ||
@@ -58,9 +77,8 @@ function getDepositAddress(product) {
   if (deposit && typeof deposit === 'object') {
     return {
       country: deposit.pais || deposit.country || 'Argentina',
-      latitude: deposit.latitud || deposit.latitude || null,
       locality: deposit.localidad || deposit.locality || deposit.ciudad || '',
-      longitude: deposit.longitud || deposit.longitude || null,
+      name: deposit.nombre || deposit.name || '',
       number: deposit.numero || deposit.number || '',
       postalCode: deposit.codigoPostal || deposit.codigo_postal || deposit.postalCode || deposit.cp || '',
       province: deposit.provincia || deposit.province || '',
@@ -69,6 +87,38 @@ function getDepositAddress(product) {
   }
 
   return product?.direccionRetiroTexto || product?.direccionDepositoTexto || product?.ubicacion || null;
+}
+
+function formatAddressText(address) {
+  if (!address) return '';
+  if (typeof address === 'string') return address;
+  if (address.addressText || address.addressLine || address.displayAddressLine) {
+    return address.addressText || address.addressLine || address.displayAddressLine;
+  }
+
+  const streetLine = [address.street, address.number].filter(Boolean).join(' ');
+  const locationLine = [
+    address.locality,
+    address.province,
+    address.postalCode,
+    address.country,
+  ].filter(Boolean).join(', ');
+
+  return [streetLine, locationLine].filter(Boolean).join(', ');
+}
+
+function getProductId(source = {}) {
+  const product = source.productoDetalle || source.detallesProducto || source.producto || source;
+  if (typeof product === 'number' || typeof product === 'string') return product;
+  return (
+    product?.identificador ||
+    product?.id ||
+    source.idProducto ||
+    source.id_producto ||
+    source.productoId ||
+    source.producto_id ||
+    null
+  );
 }
 
 function normalizeEventData(data) {
@@ -417,7 +467,6 @@ export function WinnerModalProvider({ children }) {
       }
 
       const finalPrice = parseFloat(datos.importe);
-      const shipping = parseFloat(datos.costoEnvio) || 0;
       const currency = datos.moneda || 'USD';
       setPickupSelected(false);
 
@@ -457,7 +506,7 @@ export function WinnerModalProvider({ children }) {
           (p) => Number(p.identificador) === Number(datos.idRegistroSubasta)
         );
         if (matchingPurchase) {
-          productId = matchingPurchase.producto;
+          productId = getProductId(matchingPurchase);
         }
       } catch (err) {
         console.log('[WinnerModalProvider] Error fetching purchases:', err);
@@ -474,25 +523,15 @@ export function WinnerModalProvider({ children }) {
         }
       }
 
-      let quotedShipping = shipping;
-      try {
-        const profile = await apiFetch('/v1/mi/perfil');
-        const quote = await quoteHomeShipping({
-          destinationAddress: profile,
-          originAddress: getDepositAddress(prodDetails || datos.productoDetalle || {}),
-        });
-        if (quote != null) {
-          quotedShipping = quote;
-        }
-      } catch (err) {
-        console.log('[WinnerModalProvider] Error quoting shipping:', err);
-      }
+      const depositAddress = getDepositAddress(prodDetails || datos.productoDetalle || {});
 
       setWinnerDetails({
         finalPrice,
         marketValue: finalPrice * 1.25,
         savedAmount: finalPrice * 0.25,
-        shipping: quotedShipping,
+        shipping: HOME_SHIPPING_COST,
+        pickupDepositName: depositAddress?.name || '',
+        pickupAddress: formatAddressText(depositAddress),
         total: finalPrice,
         currency,
         idRegistroSubasta: datos.idRegistroSubasta,
@@ -825,11 +864,40 @@ export function WinnerModalProvider({ children }) {
                     </Pressable>
                     <Pressable
                       disabled={isPaying}
-                      onPress={() => setPickupSelected(true)}
-                      style={styles.modalPickupButton}
+                      onPress={() => setPickupSelected((selected) => !selected)}
+                      style={[
+                        styles.modalPickupButton,
+                        pickupSelected ? styles.modalPickupButtonSelected : null,
+                      ]}
                     >
-                      <Text style={styles.modalPickupButtonText}>Retirar personalmente</Text>
+                      <Text
+                        style={[
+                          styles.modalPickupButtonText,
+                          pickupSelected ? styles.modalPickupButtonTextSelected : null,
+                        ]}
+                      >
+                        {pickupSelected ? 'Retiro personal seleccionado' : 'Retirar personalmente'}
+                      </Text>
                     </Pressable>
+                    {pickupSelected ? (
+                      <View style={styles.modalPickupAddressBox}>
+                        {winnerDetails.pickupAddress ? (
+                          <>
+                            <Text style={styles.modalPickupAddressLabel}>Deposito de retiro</Text>
+                            {winnerDetails.pickupDepositName ? (
+                              <Text style={styles.modalPickupDepositName}>
+                                {winnerDetails.pickupDepositName}
+                              </Text>
+                            ) : null}
+                            <Text style={styles.modalPickupAddressLabel}>Direccion</Text>
+                            <Text style={styles.modalPickupAddressText}>{winnerDetails.pickupAddress}</Text>
+                          </>
+                        ) : null}
+                        <Text style={styles.modalPickupAddressText}>
+                          El envio a domicilio no se cobra y queda en {formatPrice(0, 'ARS')}.
+                        </Text>
+                      </View>
+                    ) : null}
 
                     <Text style={styles.modalDisclaimer}>
                       Al confirmar aceptas nuestros Términos y Política de privacidad
@@ -1190,10 +1258,43 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingVertical: 10,
   },
+  modalPickupButtonSelected: {
+    backgroundColor: colors.burgundy,
+  },
   modalPickupButtonText: {
     color: colors.burgundy,
     fontFamily: fonts.bold,
     fontSize: 13,
+  },
+  modalPickupButtonTextSelected: {
+    color: colors.white,
+  },
+  modalPickupAddressBox: {
+    backgroundColor: '#FAF1E8',
+    borderColor: '#D6C0AF',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+    padding: 10,
+  },
+  modalPickupAddressLabel: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  modalPickupDepositName: {
+    color: '#510310',
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 8,
+  },
+  modalPickupAddressText: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 16,
   },
   modalDisclaimer: {
     color: '#8C777A',

@@ -2,9 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
-import AddressMapPreview from '../../components/forms/address/AddressMapPreview';
 import { listPaymentMethods } from '../../services/paymentMethodsApi';
-import { quoteHomeShipping } from '../../services/shippingApi';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl } from '../../utils/config';
@@ -12,6 +10,7 @@ import { apiFetch, getApiErrorMessage } from '../../utils/http';
 import { formatMoney } from '../../utils/money';
 import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
 
+const HOME_SHIPPING_COST = 8000;
 const tabs = ['Subastas', 'Compras', 'Pujas', 'Multas', 'Metricas'];
 const tabLabels = {
   Compras: 'Compras realizadas',
@@ -40,6 +39,30 @@ function formatShippingTotal(productAmount, shippingAmount, currency) {
 
 function getDepositAddress(source = {}) {
   const product = source.detallesProducto || source.producto || source.productoDetalle || source;
+  const depositName =
+    source.depositoNombre ||
+    source.deposito_nombre ||
+    product.depositoNombre ||
+    product.deposito_nombre ||
+    '';
+  const depositDirection =
+    source.depositoDireccion ||
+    source.deposito_direccion ||
+    source.direccionDeposito ||
+    source.direccion_deposito ||
+    product.depositoDireccion ||
+    product.deposito_direccion ||
+    product.direccionDeposito ||
+    product.direccion_deposito ||
+    '';
+
+  if (depositName || depositDirection) {
+    return {
+      addressText: depositDirection,
+      name: depositName,
+    };
+  }
+
   const deposit =
     source.deposito ||
     source.depositoProducto ||
@@ -56,6 +79,7 @@ function getDepositAddress(source = {}) {
       latitude: deposit.latitud || deposit.latitude || null,
       locality: deposit.localidad || deposit.locality || deposit.ciudad || '',
       longitude: deposit.longitud || deposit.longitude || null,
+      name: deposit.nombre || deposit.name || '',
       number: deposit.numero || deposit.number || '',
       postalCode: deposit.codigoPostal || deposit.codigo_postal || deposit.postalCode || deposit.cp || '',
       province: deposit.provincia || deposit.province || '',
@@ -72,6 +96,44 @@ function getDepositAddress(source = {}) {
     '';
 
   return text ? { addressText: text } : null;
+}
+
+function formatAddressText(address) {
+  if (!address) return '';
+  if (typeof address === 'string') return address;
+  if (address.addressText || address.addressLine || address.displayAddressLine) {
+    return address.addressText || address.addressLine || address.displayAddressLine;
+  }
+
+  const streetLine = [address.street, address.number]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const locationLine = [
+    address.locality,
+    address.province,
+    address.postalCode,
+    address.country,
+  ]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean)
+    .join(', ');
+
+  return [streetLine, locationLine].filter(Boolean).join(', ');
+}
+
+function getProductIdFromPurchase(rawPurchase = {}) {
+  const product = rawPurchase.detallesProducto || rawPurchase.productoDetalle || rawPurchase.producto;
+  if (typeof product === 'number' || typeof product === 'string') return product;
+  return (
+    product?.identificador ||
+    product?.id ||
+    rawPurchase.idProducto ||
+    rawPurchase.id_producto ||
+    rawPurchase.productoId ||
+    rawPurchase.producto_id ||
+    null
+  );
 }
 
 function formatDateTime(isoString) {
@@ -257,10 +319,18 @@ function isInsufficientFundsError(error) {
 function normalizePaymentMethod(payment) {
   const detail = payment?.detalle || {};
   const isCheck = isCheckPaymentMethod(payment);
+  const type = payment?.tipo;
+  const last4 =
+    detail.ultimosCuatroDigitos ||
+    detail.ultimos4 ||
+    payment?.last4 ||
+    detail.cbu?.slice(-4) ||
+    detail.numeroCuenta?.slice(-4) ||
+    '';
 
   return {
     id: String(payment?.identificador || payment?.id || ''),
-    tipo: payment?.tipo,
+    tipo: type,
     moneda: payment?.moneda,
     isCheck,
     brand: isCheck
@@ -268,13 +338,9 @@ function normalizePaymentMethod(payment) {
       : detail.red ||
         detail.nombreBanco ||
         payment?.brand ||
-        (payment?.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
-    last4:
-      detail.ultimosCuatroDigitos ||
-      detail.ultimos4 ||
-      payment?.last4 ||
-      detail.cbu?.slice(-4) ||
-      '0000',
+        (type === 'cuentaBancaria' ? 'Banco' : 'Tarjeta'),
+    last4,
+    accountNumber: detail.numeroCuenta || detail.cbu || payment?.accountNumber || '',
     number: detail.numero || payment?.number || payment?.identificador || payment?.id,
     availableAmount: getPaymentAvailableAmount(payment),
     expiry: formatPaymentExpiration(
@@ -284,7 +350,43 @@ function normalizePaymentMethod(payment) {
       detail.titular ||
       detail.nombreTitular ||
       payment?.cardholder ||
-      'Juana Mendez',
+      '',
+  };
+}
+
+function buildPaidPaymentDisplay(payment) {
+  if (!payment) {
+    return {
+      badge: 'PAGO',
+      subtitle: 'Medio de pago no disponible',
+      title: 'Pago registrado',
+    };
+  }
+
+  if (payment.isCheck) {
+    return {
+      badge: 'CHEQUE',
+      subtitle: payment.moneda ? `Moneda: ${payment.moneda}` : '',
+      title: payment.number ? `Cheque certificado N° ${payment.number}` : 'Cheque certificado',
+    };
+  }
+
+  if (payment.tipo === 'cuentaBancaria') {
+    const accountSuffix = payment.accountNumber ? ` terminada en ${payment.accountNumber.slice(-4)}` : '';
+    return {
+      badge: 'BANCO',
+      subtitle: payment.moneda ? `Moneda: ${payment.moneda}` : '',
+      title: `${payment.brand || 'Cuenta bancaria'}${accountSuffix}`,
+    };
+  }
+
+  return {
+    badge: (payment.brand || 'Tarjeta').toUpperCase(),
+    subtitle: [
+      payment.cardholder,
+      payment.expiry ? `Vencimiento: ${payment.expiry}` : '',
+    ].filter(Boolean).join(' · '),
+    title: payment.last4 ? `•••• ${payment.last4}` : 'Tarjeta registrada',
   };
 }
 
@@ -300,12 +402,20 @@ function getPurchaseTotal(item) {
 
 function mapSubasta(s) {
   const hora = s.hora ? ` · ${String(s.hora).slice(0, 5)}h` : '';
+  const cover =
+    s.fotoPrincipal ||
+    s.foto_principal ||
+    s.portada ||
+    s.imagenPortada ||
+    s.imagen_portada ||
+    s.producto?.fotoPrincipal ||
+    (Array.isArray(s.producto?.fotos) ? s.producto.fotos[0] : null);
   return {
     identificador: s.identificador,
     title: s.nombre || `Subasta #${s.identificador}`,
-    image: s.fotoPrincipal ? { uri: resolveApiAssetUrl(s.fotoPrincipal) } : null,
+    image: cover ? { uri: resolveApiAssetUrl(cover) } : null,
     date: s.fecha ? `${formatDateOnly(s.fecha)}${hora}` : '-',
-    location: s.ubicacion || '-',
+    location: s.ubicacion || '',
     category: capitalize(s.categoria),
     status: mapEstadoSubasta(s.estado),
     description: s.descripcion || '',
@@ -317,12 +427,33 @@ function mapSubasta(s) {
 }
 
 function mapPuja(p) {
+  const producto = p.producto || p.detallesProducto || {};
+  const subasta = p.subasta || {};
+  const productName =
+    producto.nombre && producto.descripcionCatalogo
+      ? `${producto.nombre} - ${producto.descripcionCatalogo}`
+      : producto.nombre ||
+        producto.descripcionCatalogo ||
+        producto.descripcionCompleta ||
+        p.nombreProducto ||
+        p.descripcionProducto ||
+        `Ítem #${p.idItem}`;
+  const auctionName =
+    subasta.nombre ||
+    p.nombreSubasta ||
+    p.subastaNombre ||
+    (p.idSubasta ? `Subasta #${p.idSubasta}` : `Subasta #${p.idItem}`);
+  const photo =
+    producto.fotoPrincipal ||
+    producto.foto_principal ||
+    (Array.isArray(producto.fotos) ? producto.fotos[0] : null) ||
+    p.fotoProducto;
   return {
-    title: p.producto?.descripcionCatalogo || `Ítem #${p.idItem}`,
-    image: p.producto?.fotoPrincipal ? { uri: resolveApiAssetUrl(p.producto.fotoPrincipal) } : null,
-    auction: p.subasta?.nombre || `Subasta #${p.idItem}`,
+    title: productName,
+    image: photo ? { uri: resolveApiAssetUrl(photo) } : null,
+    auction: auctionName,
     date: formatDateTime(p.realizadaEn),
-    amount: formatAmount(p.importe, p.subasta?.moneda),
+    amount: formatAmount(p.importe, subasta.moneda || p.moneda),
     result: p.ganador === 'si' ? 'Ganadora' : 'Superada',
     resultTone: p.ganador === 'si' ? 'success' : 'danger',
   };
@@ -330,10 +461,9 @@ function mapPuja(p) {
 
 function mapCompra(r) {
   const importe = Number(r.importe || 0);
-  const costoEnvio = Number(r.costoEnvio || 0);
   const retiraPersonalmente = isTruthyFlag(r.retiraPersonalmente);
   const pagado = isTruthyFlag(r.pagado);
-  const shipping = retiraPersonalmente ? 0 : costoEnvio;
+  const shipping = retiraPersonalmente ? 0 : HOME_SHIPPING_COST;
   const totalLabel = formatShippingTotal(importe, shipping, r.moneda);
   const producto = r.detallesProducto || r.producto || {};
   const fotoProducto =
@@ -353,10 +483,13 @@ function mapCompra(r) {
         r.descripcionProducto ||
         `Compra #${r.identificador}`;
   const medioPago = r.medioPago || r.paymentMethod || null;
+  const depositAddress = getDepositAddress(r);
+  const productId = getProductIdFromPurchase(r);
 
   return {
     id: String(r.identificador),
     identificador: r.identificador,
+    productId,
     code: producto.codigo || r.codigoProducto || `SUB-${r.identificador}`,
     title,
     image: fotoProducto
@@ -382,9 +515,9 @@ function mapCompra(r) {
     paidDate: pagado && r.fechaPago ? formatDateOnly(r.fechaPago) : null,
     paymentMethod: pagado ? normalizePaymentMethod(medioPago) : null,
     retiraPersonalmente,
-    pickup: r.direccionRetiro || null,
-    pickupAddress: r.direccionRetiroTexto || null,
-    depositAddress: getDepositAddress(r),
+    pickup: r.direccionRetiro || depositAddress || null,
+    pickupAddress: r.direccionRetiroTexto || formatAddressText(depositAddress),
+    depositAddress,
     pickupWindow: r.ventanaRetiro || null,
     details: r.detalles || null,
   };
@@ -702,6 +835,7 @@ function WonAuctionCard({
 
   const defaultPaymentId = paymentMethods[0]?.id;
   const currentSelectedPaymentId = selectedPaymentId || defaultPaymentId;
+  const paidPaymentDisplay = buildPaidPaymentDisplay(item.paymentMethod);
 
   return (
     <View style={styles.wonAuctionCard}>
@@ -743,13 +877,6 @@ function WonAuctionCard({
         <Text style={styles.wonPriceTotalLabel}>Total a pagar</Text>
         <Text style={styles.wonPriceTotalValue}>{formattedTotal}</Text>
       </View>
-
-      {item.depositAddress ? (
-        <View style={styles.depositMapBlock}>
-          <Text style={styles.wonSectionTitle}>Deposito del producto</Text>
-          <AddressMapPreview address={item.depositAddress} />
-        </View>
-      ) : null}
 
       {isPending ? (
         <>
@@ -845,28 +972,24 @@ function WonAuctionCard({
               {item.paymentMethod?.isCheck ? (
                 <ChequePaymentIcon />
               ) : (
-                <Text style={styles.visaBadgeText}>
-                  {item.paymentMethod?.tipo === 'cuentaBancaria'
-                    ? 'BANCO'
-                    : (item.paymentMethod?.brand || 'VISA').toUpperCase()}
-                </Text>
+                <Text style={styles.visaBadgeText}>{paidPaymentDisplay.badge}</Text>
               )}
             </View>
             <View>
               <Text style={styles.wonPaidMethodTitle}>
-                {item.paymentMethod?.isCheck
-                  ? (item.paymentMethod?.number ? `Cheque N° ${item.paymentMethod.number}` : 'Cheque Certificado')
-                  : item.paymentMethod?.tipo === 'cuentaBancaria'
-                  ? `${item.paymentMethod?.brand || 'Transferencia'} (${item.paymentMethod?.moneda || 'ARS'})`
-                  : `•••• ${item.paymentMethod?.last4 || '4367'}`}
+                {paidPaymentDisplay.title}
               </Text>
-              <Text style={styles.wonPaidMethodSubtitle}>
-                {item.paymentMethod?.cardholder || 'Juana Mendez'}
-              </Text>
+              {paidPaymentDisplay.subtitle ? (
+                <Text style={styles.wonPaidMethodSubtitle}>
+                  {paidPaymentDisplay.subtitle}
+                </Text>
+              ) : null}
             </View>
           </View>
           <Text style={styles.wonSuccessNotice}>
-            Tu pago se ha procesado correctamente. Tu pedido se enviara a domicilio.
+            {item.retiraPersonalmente
+              ? 'Tu pago se ha procesado correctamente. Podras retirar tu pedido personalmente.'
+              : 'Tu pago se ha procesado correctamente. Tu pedido se enviara a domicilio.'}
           </Text>
         </>
       )}
@@ -885,11 +1008,7 @@ function WonAuctionCard({
               </Pressable>
             ) : null}
           </>
-        ) : (
-          <Pressable onPress={onRequestPickup} style={[styles.outlineButton, styles.purchaseActionButton]}>
-            <Text style={styles.outlineButtonText}>Retirar personalmente</Text>
-          </Pressable>
-        )}
+        ) : null}
       </View>
     </View>
   );
@@ -1021,7 +1140,7 @@ function MiniProgress({ color = colors.burgundy, value }) {
   );
 }
 
-function DonutChart({ value, wonPercent }) {
+function DonutChart({ label = 'ganados', value, wonPercent }) {
   const size = 118;
   const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
@@ -1046,7 +1165,7 @@ function DonutChart({ value, wonPercent }) {
       </Svg>
       <View style={styles.donutCenter}>
         <Text style={styles.donutValue}>{wonPercent}%</Text>
-        <Text style={styles.donutLabel}>ganadas</Text>
+        <Text style={styles.donutLabel}>{label}</Text>
       </View>
     </View>
   );
@@ -1120,37 +1239,53 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
   const [selectedYear, setSelectedYear] = useState(() => metricYears[0] || String(new Date().getFullYear()));
 
   const totalParticipated =
-  metricas?.totalSubastasParticipadas ??
-  metricas?.totalCompras ??
-  0;
+    metricas?.totalSubastasParticipadas ??
+    metricas?.totalCompras ??
+    0;
 
-  const totalGanadas =
+  const productosGanados =
+    metricas?.productosGanados ??
+    metricas?.totalProductosGanados ??
     metricas?.totalGanadas ??
     metricas?.pujasGanadas ??
     0;
+
+  const productosPujadosFallback =
+    metricas?.totalProductosPujados ??
+    metricas?.totalItemsPujados ??
+    totalParticipated;
+
+  const productosNoGanados =
+    metricas?.productosNoGanados ??
+    metricas?.totalProductosNoGanados ??
+    Math.max(0, productosPujadosFallback - productosGanados);
 
   const totalPujas =
     metricas?.totalPujasRealizadas ??
     metricas?.totalPujas ??
     0;
 
-  const totalPagado =
-    metricas?.totalImportePagado ??
+  const totalPagadoArs =
+    metricas?.totalImportePagadoARS ??
+    metricas?.totalImportePagadoArs ??
+    (metricas?.monedaImportePagado === 'ARS' ? metricas?.totalImportePagado : 0) ??
     0;
 
-  const totalPujado =
-    metricas?.totalImportePujado ??
+  const totalPagadoUsd =
+    metricas?.totalImportePagadoUSD ??
+    metricas?.totalImportePagadoUsd ??
+    (metricas?.monedaImportePagado === 'USD' ? metricas?.totalImportePagado : 0) ??
     0;
 
-  const wonRatio = totalParticipated > 0 ? totalGanadas / totalParticipated : 0;
+  const productosConResultado = productosGanados + productosNoGanados;
+  const wonRatio = productosConResultado > 0 ? productosGanados / productosConResultado : 0;
   const wonPercent = Math.round(wonRatio * 100);
-  const paidRatio = totalPujado > 0 ? (totalPagado / totalPujado) * 100 : 0;
 
   const dashboardStats = [
     { label: 'Participaste', value: String(totalParticipated), helper: 'subastas' },
     { label: 'Pujas realizadas', value: String(totalPujas), helper: 'ofertas' },
-    { label: 'Ganadas', value: String(totalGanadas), helper: 'subastas' },
-    { label: 'Pagado', value: formatAmount(totalPagado), helper: 'total' },
+    { label: 'Productos ganados', value: String(productosGanados), helper: 'ganados' },
+    { label: 'No ganados', value: String(productosNoGanados), helper: 'productos' },
   ];
 
   const categoryMetrics = (metricas?.porCategoria || []).map((item) => ({
@@ -1169,7 +1304,7 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
 
       <ActivityCard title="Resumen de actividad">
         <View style={styles.dashboardRow}>
-          <DonutChart value={wonRatio} wonPercent={wonPercent} />
+          <DonutChart label="ganados" value={wonRatio} wonPercent={wonPercent} />
           <View style={styles.dashboardCopy}>
             <Text style={styles.metricLine}>
               <Text style={styles.metricStrong}>Participaste en:</Text> {totalParticipated}
@@ -1178,7 +1313,10 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
               <Text style={styles.metricStrong}>Pujas realizadas:</Text> {totalPujas}
             </Text>
             <Text style={styles.metricLine}>
-              <Text style={styles.metricStrong}>Subastas ganadas:</Text> {totalGanadas}
+              <Text style={styles.metricStrong}>Productos ganados:</Text> {productosGanados}
+            </Text>
+            <Text style={styles.metricLine}>
+              <Text style={styles.metricStrong}>Productos no ganados:</Text> {productosNoGanados}
             </Text>
           </View>
         </View>
@@ -1186,15 +1324,15 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
 
       <ActivityCard title="Montos">
         <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>Total ofertado</Text>
-          <Text style={styles.amountValue}>{formatAmount(totalPujado)}</Text>
+          <Text style={styles.amountLabel}>Pagado en pesos</Text>
+          <Text style={styles.amountValue}>{formatAmount(totalPagadoArs, 'ARS')}</Text>
         </View>
-        <MiniProgress value={100} />
+        <MiniProgress color={colors.cocoa} value={totalPagadoArs > 0 ? 100 : 0} />
         <View style={styles.amountRow}>
-          <Text style={styles.amountLabel}>Total pagado</Text>
-          <Text style={styles.amountValue}>{formatAmount(totalPagado)}</Text>
+          <Text style={styles.amountLabel}>Pagado en dolares</Text>
+          <Text style={styles.amountValue}>{formatAmount(totalPagadoUsd, 'USD')}</Text>
         </View>
-        <MiniProgress color={colors.blush} value={paidRatio} />
+        <MiniProgress color={colors.burgundy} value={totalPagadoUsd > 0 ? 100 : 0} />
       </ActivityCard>
 
       {metricYears.length > 0 ? (
@@ -1213,7 +1351,7 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
                 <View style={styles.categoryMetricHeader}>
                   <Text style={styles.categoryName}>{item.category}</Text>
                   <Text style={styles.categoryValue}>
-                    {item.won} ganadas de {item.participated} participaciones
+                    {item.won} productos ganados de {item.participated} participaciones
                   </Text>
                 </View>
                 <MiniProgress color={colors.cocoa} value={value} />
@@ -1325,19 +1463,29 @@ function PurchaseDetailModal({ item, onClose }) {
 function PickupConfirmModal({ item, isLoading, onClose, onConfirm }) {
   if (!item) return null;
 
+  const pickupAddressText = item.pickupAddress || formatAddressText(item.depositAddress || item.pickup);
+  const pickupDepositName = item.depositAddress?.name || '';
+
   return (
     <AppModal onClose={onClose} title="Retiro personal" visible={Boolean(item)}>
       <Text style={styles.modalText}>
         Si confirmas el retiro personal, no podras deshacer esta accion y
         perderas la cobertura del seguro sobre tu compra.
       </Text>
+      <Text style={styles.modalText}>
+        Al elegir esta opcion, el envio a domicilio no se cobra y queda en {formatAmount(0, 'ARS')}.
+      </Text>
       <Text style={styles.modalStrongText}>
         ¿Estas segura de que queres retirar "{item.title}" personalmente?
       </Text>
-      {item.pickupAddress ? (
+      {pickupAddressText ? (
         <View style={styles.pickupAddressBox}>
-          <Text style={styles.pickupAddressLabel}>Direccion de retiro</Text>
-          <Text style={styles.pickupAddressText}>{item.pickupAddress}</Text>
+          <Text style={styles.pickupAddressLabel}>Deposito de retiro</Text>
+          {pickupDepositName ? (
+            <Text style={styles.pickupDepositName}>{pickupDepositName}</Text>
+          ) : null}
+          <Text style={styles.pickupAddressLabel}>Direccion</Text>
+          <Text style={styles.pickupAddressText}>{pickupAddressText}</Text>
           {item.pickupWindow ? <Text style={styles.pickupAddressText}>{item.pickupWindow}</Text> : null}
         </View>
       ) : null}
@@ -1360,16 +1508,20 @@ function PickupConfirmModal({ item, isLoading, onClose, onConfirm }) {
 function PickupLocationModal({ item, onClose }) {
   if (!item) return null;
 
+  const pickupAddressText = item.pickupAddress || formatAddressText(item.depositAddress || item.pickup);
+  const pickupDepositName = item.depositAddress?.name || '';
+
   return (
     <AppModal onClose={onClose} title="Ubicacion de retiro" visible={Boolean(item)}>
-      <Text style={styles.modalText}>
-        Puede retirar en {item.pickupAddress} {item.pickupWindow}.
-      </Text>
-      {item.pickup ? (
-        <View style={styles.locationMap}>
-          <AddressMapPreview address={item.pickup} />
-        </View>
-      ) : null}
+      <View style={styles.pickupAddressBox}>
+        <Text style={styles.pickupAddressLabel}>Deposito de retiro</Text>
+        {pickupDepositName ? (
+          <Text style={styles.pickupDepositName}>{pickupDepositName}</Text>
+        ) : null}
+        <Text style={styles.pickupAddressLabel}>Direccion</Text>
+        <Text style={styles.pickupAddressText}>{pickupAddressText || '-'}</Text>
+        {item.pickupWindow ? <Text style={styles.pickupAddressText}>{item.pickupWindow}</Text> : null}
+      </View>
       <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
         <Text style={styles.modalPrimaryText}>Entendido</Text>
       </Pressable>
@@ -1511,30 +1663,30 @@ export default function MyActivityScreen({ onPayPenalty }) {
         const comprasRes = await apiFetch('/v1/mi/compras');
         const items = getResponseItems(comprasRes);
         result = items.map(mapCompra);
-        let profile = null;
-        try {
-          profile = await apiFetch('/v1/mi/perfil');
-        } catch {
-          profile = null;
-        }
-        if (profile) {
-          result = await Promise.all(
-            result.map(async (item) => {
-              if (item.retiraPersonalmente || item.shipping > 0) return item;
-              const shippingQuote = await quoteHomeShipping({
-                destinationAddress: profile,
-                originAddress: item.depositAddress || item.pickup,
-              });
-              if (shippingQuote == null) return item;
+        result = await Promise.all(
+          result.map(async (item) => {
+            if (
+              !item.productId ||
+              (item.depositAddress?.name && formatAddressText(item.depositAddress))
+            ) {
+              return item;
+            }
+
+            try {
+              const productDetails = await apiFetch(`/v1/productos/${item.productId}`);
+              const depositAddress = getDepositAddress(productDetails);
+              if (!depositAddress) return item;
               return {
                 ...item,
-                amount: formatShippingTotal(item.finalPrice, shippingQuote, item.currency),
-                shipping: shippingQuote,
-                shippingCost: formatAmount(shippingQuote, 'ARS'),
+                depositAddress,
+                pickup: item.pickup || depositAddress,
+                pickupAddress: item.pickupAddress || formatAddressText(depositAddress),
               };
-            })
-          );
-        }
+            } catch {
+              return item;
+            }
+          })
+        );
       } else if (tab === 'Pujas') {
         const pujasRes = await apiFetch('/v1/mi/pujas');
         result = getResponseItems(pujasRes).map(mapPuja);
@@ -1602,10 +1754,14 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
     if (Number.isFinite(numericItemId) && numericItemId > 0) {
       try {
-        const res = await apiFetch(`/v1/mi/compras/${itemId}/pagar`, {
-          body: Number.isFinite(numericPaymentId) ? { idMedioPago: numericPaymentId } : {},
-          method: 'POST',
-        });
+      const res = await apiFetch(`/v1/mi/compras/${itemId}/pagar`, {
+        body: {
+          ...(Number.isFinite(numericPaymentId) ? { idMedioPago: numericPaymentId } : {}),
+          retiraPersonalmente: Boolean(selectedPurchase?.retiraPersonalmente),
+          costoEnvio: Number(selectedPurchase?.shipping ?? 0),
+        },
+        method: 'POST',
+      });
 
         if (res?.ascenso && showAscensoModal) {
           showAscensoModal(res.ascenso);
@@ -2505,6 +2661,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 3,
   },
+  pickupDepositName: {
+    color: colors.cocoa,
+    fontFamily: fonts.semiBold,
+    fontSize: 15,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
   pickupAddressText: {
     color: colors.cocoa,
     fontFamily: fonts.regular,
@@ -2553,9 +2716,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semiBold,
     fontSize: 14,
     lineHeight: 18,
-  },
-  locationMap: {
-    marginTop: 8,
   },
   mainOuterCard: {
     backgroundColor: '#FCEBDB',
@@ -2801,11 +2961,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     height: 8,
     width: 84,
-  },
-  depositMapBlock: {
-    marginBottom: 8,
-    marginTop: 4,
-    width: '100%',
   },
   wonDisclaimerText: {
     color: '#510310',
