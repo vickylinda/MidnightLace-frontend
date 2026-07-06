@@ -212,16 +212,22 @@ export function WinnerModalProvider({ children }) {
       const currency = datos.moneda || 'USD';
 
       // 1. Fetch active payment methods
-      let activeCards = [];
+      let validMethods = [];
       try {
         const methods = await apiFetch('/v1/medios-de-pago?pagina=1&cantidad=20');
         const itemsList = Array.isArray(methods) ? methods : (methods?.datos ?? methods?.items ?? []);
-        activeCards = itemsList.filter(
-          (m) => m.activo === 'si' && (m.tipo === 'tarjeta_credito' || m.tipo === 'tarjetaCredito')
+        validMethods = itemsList.filter(
+          (m) =>
+            (m.activo === 'si' || m.activo === true) &&
+            (m.tipo === 'tarjeta_credito' ||
+             m.tipo === 'tarjetaCredito' ||
+             m.tipo === 'chequeCertificado' ||
+             m.tipo === 'cheque_certificado' ||
+             m.tipo === 'cheque')
         );
-        setPaymentMethods(activeCards);
-        if (activeCards.length > 0) {
-          setSelectedMethodId(activeCards[0].identificador);
+        setPaymentMethods(validMethods);
+        if (validMethods.length > 0) {
+          setSelectedMethodId(validMethods[0].identificador);
         }
       } catch (err) {
         console.log('[WinnerModalProvider] Error prefetching payment methods:', err);
@@ -264,6 +270,15 @@ export function WinnerModalProvider({ children }) {
         idRegistroSubasta: datos.idRegistroSubasta,
       });
 
+      const isProductScreen =
+        typeof window !== 'undefined' &&
+        window.location.pathname.includes('/subasta/producto');
+
+      if (isProductScreen) {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auction_swap_back'));
+        }
+      }
       setShowWinnerModal(true);
     } catch (err) {
       console.log('[WinnerModalProvider] Error handling compra_ganada:', err);
@@ -422,11 +437,23 @@ export function WinnerModalProvider({ children }) {
                     <Text style={styles.paymentSectionTitle}>Confirma tu pago</Text>
                     <View style={styles.paymentCardsContainer}>
                       {paymentMethods.map((m, idx) => {
-                        const brand = m.detalle?.red || m.marca || 'Tarjeta';
-                        const lastFour = m.detalle?.ultimosCuatroDigitos || m.ultimos_cuatro || 'XXXX';
-                        const rawExpiry = m.detalle?.fechaVencimiento || m.fecha_vencimiento || '';
+                        const isCheck =
+                          m.tipo === 'chequeCertificado' ||
+                          m.tipo === 'cheque_certificado' ||
+                          m.tipo === 'cheque';
 
-                        let expiryFormatted = rawExpiry;
+                        const brand = isCheck
+                          ? 'Cheque Certificado'
+                          : m.detalle?.red || m.marca || 'Tarjeta';
+
+                        const lastFour =
+                          m.detalle?.ultimosCuatroDigitos ||
+                          m.ultimos_cuatro ||
+                          'XXXX';
+
+                        let expiryFormatted = '';
+                        const rawExpiry = m.detalle?.fechaVencimiento || m.fecha_vencimiento || '';
+                        expiryFormatted = rawExpiry;
                         if (rawExpiry && rawExpiry.includes('-')) {
                           const parts = rawExpiry.split('-');
                           if (parts.length >= 2) {
@@ -447,12 +474,16 @@ export function WinnerModalProvider({ children }) {
                                   {isSelected && <View style={styles.radioDot} />}
                                 </View>
                                 <Text style={styles.methodText}>
-                                  {`${brand} •••• ${lastFour}`}
+                                  {isCheck
+                                    ? `Cheque Certificado (${m.moneda || 'ARS'})`
+                                    : `${brand} •••• ${lastFour}`}
                                 </Text>
                               </View>
-                              <Text style={styles.expiryText}>
-                                {`Vence ${expiryFormatted}`}
-                              </Text>
+                              {!isCheck ? (
+                                <Text style={styles.expiryText}>
+                                  {`Vence ${expiryFormatted}`}
+                                </Text>
+                              ) : null}
                             </Pressable>
                             {idx < paymentMethods.length - 1 && (
                               <View style={styles.paymentCardSeparator} />
@@ -463,7 +494,7 @@ export function WinnerModalProvider({ children }) {
                       {paymentMethods.length === 0 && (
                         <View style={{ padding: 12 }}>
                           <Text style={[styles.methodText, { opacity: 0.6, fontStyle: 'italic' }]}>
-                            No tenés tarjetas registradas.
+                            No tenés medios de pago activos (tarjetas o cheques) registrados.
                           </Text>
                         </View>
                       )}
@@ -538,7 +569,7 @@ export function WinnerModalProvider({ children }) {
               {paymentResultModal.success ? (
                 <View style={styles.resultIconCircleSuccess}>
                   <Svg width={46} height={46} viewBox="0 0 24 24" fill="none">
-                    <Circle cx={12} cy={12} r={10} fill="#3FA54B" />
+                    <Circle cx={12} cy={12} r={10} fill="#9FB98D" />
                     <Path d="M8 12L11 15L16 9" stroke="#FFFFFF" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
                   </Svg>
                 </View>

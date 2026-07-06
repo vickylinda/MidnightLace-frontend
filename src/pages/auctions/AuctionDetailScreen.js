@@ -1158,10 +1158,9 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(81, 3, 16, 0.12)',
-    borderColor: colors.burgundy,
+    backgroundColor: colors.burgundy,
     borderRadius: 4,
-    borderWidth: 1,
+    borderWidth: 0,
     height: 23,
     justifyContent: 'center',
     maxWidth: 116,
@@ -1169,25 +1168,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   statusBadgeNuevo: {
-    backgroundColor: 'rgba(92, 176, 74, 0.15)',
-    borderColor: '#498E3C',
+    backgroundColor: '#9FB98D',
+    borderWidth: 0,
   },
   statusBadgeUsado: {
-    backgroundColor: 'rgba(224, 102, 28, 0.15)',
-    borderColor: '#E0661C',
+    backgroundColor: '#F4A261',
+    borderWidth: 0,
   },
   statusBadgeText: {
-    color: colors.burgundy,
+    color: '#FFFFFF',
     fontFamily: fonts.bold,
     fontSize: 11,
     letterSpacing: 0.5,
     lineHeight: 14,
   },
   statusBadgeTextNuevo: {
-    color: '#2E6B23',
+    color: '#FFFFFF',
   },
   statusBadgeTextUsado: {
-    color: '#D35400',
+    color: '#FFFFFF',
   },
   loadMoreButton: {
     alignItems: 'center',
