@@ -27,6 +27,61 @@ import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
 import { API_BASE_URL, resolveApiAssetUrl } from '../../utils/config';
 
+function normalizeCurrency(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function isCheckPaymentMethod(payment) {
+  const type = String(payment?.tipo || '').trim();
+  return (
+    type === 'chequeCertificado' ||
+    type === 'cheque_certificado' ||
+    type === 'cheque'
+  );
+}
+
+function hasPaymentCurrencyMismatch(payment, targetCurrency) {
+  const paymentCurrency = normalizeCurrency(payment?.moneda);
+  const purchaseCurrency = normalizeCurrency(targetCurrency);
+
+  return Boolean(paymentCurrency && purchaseCurrency && paymentCurrency !== purchaseCurrency);
+}
+
+function buildCurrencyMismatchMessage(payment, targetCurrency) {
+  const paymentCurrency = normalizeCurrency(payment?.moneda) || 'otra moneda';
+  const purchaseCurrency = normalizeCurrency(targetCurrency) || 'la moneda de la subasta';
+
+  return `El medio de pago seleccionado es en ${paymentCurrency}, pero la subasta es en ${purchaseCurrency}. Reintentá con un medio de pago en ${purchaseCurrency}.`;
+}
+
+function isCurrencyMismatchError(error) {
+  const message = [
+    error?.message,
+    typeof error?.payload === 'string' ? error.payload : '',
+    error?.payload?.mensaje,
+    error?.payload?.message,
+    error?.payload?.detail,
+    error?.payload?.detalle,
+    error?.payload?.codigo,
+    error?.payload?.code,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    message.includes('moneda') ||
+    message.includes('currency')
+  ) && (
+    message.includes('medio de pago') ||
+    message.includes('tarjeta') ||
+    message.includes('transferencia') ||
+    message.includes('cuenta') ||
+    message.includes('payment')
+  );
+}
+
 function ConfettiPiece({ delay, color, initialX, initialRotate, size, shape, containerWidth }) {
   const fallAnim = useRef(new Animated.Value(0)).current;
 
@@ -163,6 +218,24 @@ export function WinnerModalProvider({ children }) {
       return;
     }
 
+    const selectedPaymentMethod = paymentMethods.find(
+      (method) => String(method.identificador) === String(selectedMethodId)
+    );
+
+    if (hasPaymentCurrencyMismatch(selectedPaymentMethod, winnerDetails.currency)) {
+      setPaymentResultModal({
+        visible: true,
+        success: false,
+        title: 'No se pudo efectuar el pago',
+        message: buildCurrencyMismatchMessage(
+          selectedPaymentMethod,
+          winnerDetails.currency
+        ),
+        buttonText: 'ELEGIR OTRO MEDIO',
+      });
+      return;
+    }
+
     try {
       setIsPaying(true);
 
@@ -182,6 +255,22 @@ export function WinnerModalProvider({ children }) {
       });
     } catch (err) {
       console.log('[WinnerModalProvider] Payment error:', err);
+      if (
+        isCurrencyMismatchError(err)
+      ) {
+        setPaymentResultModal({
+          visible: true,
+          success: false,
+          title: 'No se pudo efectuar el pago',
+          message: buildCurrencyMismatchMessage(
+            selectedPaymentMethod,
+            winnerDetails.currency
+          ),
+          buttonText: 'ELEGIR OTRO MEDIO',
+        });
+        return;
+      }
+
       setShowWinnerModal(false);
       setPaymentResultModal({
         visible: true,
@@ -221,6 +310,7 @@ export function WinnerModalProvider({ children }) {
             (m.activo === 'si' || m.activo === true) &&
             (m.tipo === 'tarjeta_credito' ||
              m.tipo === 'tarjetaCredito' ||
+             m.tipo === 'cuentaBancaria' ||
              m.tipo === 'chequeCertificado' ||
              m.tipo === 'cheque_certificado' ||
              m.tipo === 'cheque')
@@ -441,9 +531,12 @@ export function WinnerModalProvider({ children }) {
                           m.tipo === 'chequeCertificado' ||
                           m.tipo === 'cheque_certificado' ||
                           m.tipo === 'cheque';
+                        const isBank = m.tipo === 'cuentaBancaria';
 
                         const brand = isCheck
                           ? 'Cheque Certificado'
+                          : isBank
+                          ? m.detalle?.nombreBanco || 'Transferencia'
                           : m.detalle?.red || m.marca || 'Tarjeta';
 
                         const lastFour =
@@ -476,10 +569,12 @@ export function WinnerModalProvider({ children }) {
                                 <Text style={styles.methodText}>
                                   {isCheck
                                     ? `Cheque Certificado (${m.moneda || 'ARS'})`
+                                    : isBank
+                                    ? `${brand} (${m.moneda || 'ARS'})`
                                     : `${brand} •••• ${lastFour}`}
                                 </Text>
                               </View>
-                              {!isCheck ? (
+                              {!isCheck && !isBank ? (
                                 <Text style={styles.expiryText}>
                                   {`Vence ${expiryFormatted}`}
                                 </Text>
@@ -494,7 +589,7 @@ export function WinnerModalProvider({ children }) {
                       {paymentMethods.length === 0 && (
                         <View style={{ padding: 12 }}>
                           <Text style={[styles.methodText, { opacity: 0.6, fontStyle: 'italic' }]}>
-                            No tenés medios de pago activos (tarjetas o cheques) registrados.
+                            No tenés medios de pago activos (tarjetas, transferencias o cheques) registrados.
                           </Text>
                         </View>
                       )}
@@ -597,7 +692,9 @@ export function WinnerModalProvider({ children }) {
                   pressed ? { opacity: 0.88, transform: [{ scale: 0.98 }] } : null,
                 ]}
               >
-                <Text style={styles.resultModalButtonText}>ENTENDIDO</Text>
+                <Text style={styles.resultModalButtonText}>
+                  {paymentResultModal.buttonText || 'ENTENDIDO'}
+                </Text>
               </Pressable>
             </View>
           </View>

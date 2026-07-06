@@ -81,6 +81,33 @@ function checkCanBid({ isLoggedIn, userCategory, auctionCategory, hasVerifiedPay
   };
 }
 
+function isCardPaymentMethod(method) {
+  return (
+    method?.tipo === 'tarjetaCredito' ||
+    method?.tipo === 'tarjeta_credito'
+  );
+}
+
+function isActiveVerifiedCurrencyMethod(method, currency) {
+  return (
+    (method?.activo === 'si' || method?.activo === true) &&
+    (method?.verificado === 'si' || method?.verificado === true) &&
+    method?.moneda === currency
+  );
+}
+
+function chooseBidPaymentMethod(methods, currency) {
+  const validMethods = methods.filter((method) =>
+    isActiveVerifiedCurrencyMethod(method, currency)
+  );
+
+  return (
+    validMethods.find((method) => isCardPaymentMethod(method)) ||
+    validMethods[0] ||
+    null
+  );
+}
+
 // Pure JS base64 decoder for Hermers / React Native environment
 function getUserId() {
   const token = getAccessToken();
@@ -592,11 +619,8 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
     apiFetch('/v1/medios-de-pago?pagina=1&cantidad=20')
       .then((methods) => {
         const itemsList = Array.isArray(methods) ? methods : (methods?.datos ?? methods?.items ?? []);
-        const valid = itemsList.some(
-          (m) =>
-            (m.activo === 'si' || m.activo === true) &&
-            (m.verificado === 'si' || m.verificado === true) &&
-            (m.moneda === currency)
+        const valid = itemsList.some((method) =>
+          isActiveVerifiedCurrencyMethod(method, currency)
         );
         setHasVerifiedPaymentMethod(valid);
       })
@@ -653,12 +677,7 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
       // 1. Get payment methods to find an active one in the correct currency
       const methods = await apiFetch('/v1/medios-de-pago?pagina=1&cantidad=20');
       const itemsList = Array.isArray(methods) ? methods : (methods?.datos ?? methods?.items ?? []);
-      const validMethod = itemsList.find(
-        (m) =>
-          (m.activo === 'si' || m.activo === true) &&
-          (m.verificado === 'si' || m.verificado === true) &&
-          m.moneda === currency
-      );
+      const validMethod = chooseBidPaymentMethod(itemsList, currency);
 
       if (!validMethod) {
         alert(`No tenés un medio de pago verificado y activo en ${currency} registrado. Por favor, agregalo en tu Perfil.`);

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -29,6 +29,8 @@ const referenceColors = {
 };
 
 const CATALOG_PAGE_SIZE = 6;
+const BID_TIME_EXTENSION_SECONDS = 5;
+const BID_TIME_EXTENSION_MS = BID_TIME_EXTENSION_SECONDS * 1000;
 
 function LocationPinIcon({ size = 31 }) {
   return (
@@ -169,6 +171,54 @@ function formatActiveTimeCard(totalSecs) {
   return `${pad(mins)}:${pad(secs)}`;
 }
 
+function getTimeValueMs(value) {
+  if (!value) {
+    return null;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function getExtendedBidEndTime(currentItem, bidData) {
+  const currentEndValue = currentItem?.finalizaEn ?? currentItem?.finaliza_en;
+  const bidEndValue = bidData?.finalizaEn ?? bidData?.finaliza_en;
+  const currentEndMs = getTimeValueMs(currentEndValue);
+  const bidEndMs = getTimeValueMs(bidEndValue);
+  const extendedEndMs = currentEndMs ? currentEndMs + BID_TIME_EXTENSION_MS : null;
+  const nextEndMs = Math.max(extendedEndMs || 0, bidEndMs || 0);
+
+  return nextEndMs > 0 ? new Date(nextEndMs).toISOString() : currentEndValue;
+}
+
+function TimeExtensionBadge({ animation, variant = 'card' }) {
+  const opacity = animation.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [0, 1, 0],
+    extrapolate: 'clamp',
+  });
+  const translateY = animation.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [8, -6, 5],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <Animated.Text
+      style={[
+        styles.timeExtensionBadge,
+        variant === 'header' ? styles.timeExtensionBadgeHeader : null,
+        {
+          opacity,
+          transform: [{ translateY }],
+        },
+      ]}
+    >
+      +{BID_TIME_EXTENSION_SECONDS}
+    </Animated.Text>
+  );
+}
+
 function BiddersAvatarStack({ bidders = [], totalCount = 0 }) {
   const popAnim = useRef(new Animated.Value(0)).current;
   const prevTopIdRef = useRef(null);
@@ -286,6 +336,7 @@ function ProductLotCard({
   isActive,
   isFinished,
   activeItemData,
+  timeExtensionAnimation,
   now,
   biddersInfo,
 }) {
@@ -400,12 +451,13 @@ function ProductLotCard({
                 </Text>
                 <BiddersAvatarStack bidders={biddersInfo?.recentBidders} totalCount={biddersInfo?.totalCount} />
               </View>
-              <Text style={styles.activeTimeLabel}>
-                Tiempo restante:{' '}
+              <View style={styles.activeTimeRow}>
+                <Text style={styles.activeTimeLabel}>Tiempo restante:</Text>
                 <Text style={styles.activeTimeValue}>
                   {formatActiveTimeCard(activeItemRemainingSecs)}
                 </Text>
-              </Text>
+                <TimeExtensionBadge animation={timeExtensionAnimation} />
+              </View>
             </View>
           ) : isFinished ? (
             <View style={styles.priceBlock}>
@@ -491,6 +543,8 @@ export default function AuctionDetailScreen({
   const [activeItem, setActiveItem] = useState(null);
   const [recentBiddersMap, setRecentBiddersMap] = useState({});
   const wsRef = useRef(null);
+  const activeItemRef = useRef(null);
+  const timeExtensionAnim = useRef(new Animated.Value(0)).current;
   const hasRefreshedForStartRef = useRef(false);
   const [wsStatus, setWsStatus] = useState('disconnected');
   const serverTimeOffsetRef = useRef(0);
@@ -501,6 +555,32 @@ export default function AuctionDetailScreen({
   const compact = contentWidth < 325;
   const resolvedAuctionId =
     auctionId ?? auction?.identificador ?? auction?.id;
+
+  useEffect(() => {
+    activeItemRef.current = activeItem;
+  }, [activeItem]);
+
+  const triggerTimeExtensionAnimation = useCallback(() => {
+    timeExtensionAnim.stopAnimation();
+    timeExtensionAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(timeExtensionAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.delay(420),
+      Animated.timing(timeExtensionAnim, {
+        toValue: 2,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        timeExtensionAnim.setValue(0);
+      }
+    });
+  }, [timeExtensionAnim]);
 
   useEffect(() => {
     if (!resolvedAuctionId) return;
@@ -723,6 +803,17 @@ export default function AuctionDetailScreen({
           const datos = message.datos;
           const datosIdItem = datos?.idItem ?? datos?.id_item;
           if (active && datosIdItem) {
+            const currentActiveItem = activeItemRef.current;
+            const currentActiveItemId =
+              currentActiveItem?.idItem ?? currentActiveItem?.id_item;
+            const isBidForActiveItem =
+              currentActiveItem &&
+              Number(currentActiveItemId) === Number(datosIdItem);
+
+            if (isBidForActiveItem) {
+              triggerTimeExtensionAnimation();
+            }
+
             const newBidder = {
               id: datos.idPuja ?? datos.id_puja ?? Date.now(),
               name: datos.nombreUsuario ?? datos.nombre_usuario ?? 'Comprador',
@@ -745,6 +836,7 @@ export default function AuctionDetailScreen({
             setActiveItem((current) => {
               const currentIdItem = current?.idItem ?? current?.id_item;
               if (current && Number(currentIdItem) === Number(datosIdItem)) {
+                const nextEndTime = getExtendedBidEndTime(current, datos);
                 return {
                   ...current,
                   mejorOferta: datos.importe,
@@ -753,6 +845,8 @@ export default function AuctionDetailScreen({
                   puja_minima: datos.pujaMinima ?? datos.puja_minima,
                   pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
                   puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
+                  finalizaEn: nextEndTime,
+                  finaliza_en: nextEndTime,
                 };
               }
               return current;
@@ -761,6 +855,8 @@ export default function AuctionDetailScreen({
         } else if (message.evento === 'cambioItem') {
           const datos = message.datos;
           if (active) {
+            timeExtensionAnim.stopAnimation();
+            timeExtensionAnim.setValue(0);
             setActiveItem(datos.itemActual);
             if (datos.itemAnterior) {
               const prevIdItem = datos.itemAnterior.idItem ?? datos.itemAnterior.id_item;
@@ -777,6 +873,8 @@ export default function AuctionDetailScreen({
           }
         } else if (message.evento === 'subastaFinalizada') {
           if (active) {
+            timeExtensionAnim.stopAnimation();
+            timeExtensionAnim.setValue(0);
             setActiveItem(null);
             getAuctionDetails(resolvedAuctionId)
               .then((details) => {
@@ -814,7 +912,7 @@ export default function AuctionDetailScreen({
         wsRef.current = null;
       }
     };
-  }, [resolvedAuctionId, auctionDetails?.estado]);
+  }, [resolvedAuctionId, auctionDetails?.estado, timeExtensionAnim, triggerTimeExtensionAnimation]);
 
   async function handleLoadMore() {
     if (!hasMoreLots || isLoadingMore) {
@@ -866,9 +964,17 @@ export default function AuctionDetailScreen({
             {auctionDetails?.estado === 'abierta' ? (
               <View style={styles.countdownBlock}>
                 <Text style={styles.countdownLabel}>Proximo item en</Text>
-                <Text style={styles.countdownValue}>
-                  {activeItem ? formatActiveTimeHeader(activeItemRemainingSecs) : 'Cargando...'}
-                </Text>
+                <View style={styles.countdownValueRow}>
+                  <Text style={styles.countdownValue}>
+                    {activeItem ? formatActiveTimeHeader(activeItemRemainingSecs) : 'Cargando...'}
+                  </Text>
+                  {activeItem ? (
+                    <TimeExtensionBadge
+                      animation={timeExtensionAnim}
+                      variant="header"
+                    />
+                  ) : null}
+                </View>
               </View>
             ) : auctionDetails?.estado === 'cerrada' ? (
               <View style={styles.countdownBlock}>
@@ -935,6 +1041,7 @@ export default function AuctionDetailScreen({
                     isActive={isActive}
                     isFinished={isFinished}
                     activeItemData={activeItem}
+                    timeExtensionAnimation={timeExtensionAnim}
                     now={now + serverTimeOffsetRef.current}
                     biddersInfo={recentBiddersMap[lot.identificador] || recentBiddersMap[lot.idProducto]}
                   />
@@ -1040,6 +1147,25 @@ const styles = StyleSheet.create({
     fontSize: 20,
     letterSpacing: 0,
     lineHeight: 26,
+  },
+  countdownValueRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    minHeight: 28,
+  },
+  timeExtensionBadge: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 12,
+    lineHeight: 16,
+    marginLeft: 5,
+    minWidth: 20,
+  },
+  timeExtensionBadgeHeader: {
+    fontSize: 16,
+    lineHeight: 20,
+    marginLeft: 7,
+    minWidth: 25,
   },
   auctionMeta: {
     alignItems: 'flex-end',
@@ -1294,9 +1420,15 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 13,
   },
+  activeTimeRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+  },
   activeTimeValue: {
     color: colors.burgundy,
     fontFamily: fonts.bold,
+    marginLeft: 3,
   },
   avatarStackWrapper: {
     flexDirection: 'row',
