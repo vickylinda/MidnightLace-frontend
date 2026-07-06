@@ -975,7 +975,7 @@ function WonAuctionCard({
                 <Text style={styles.visaBadgeText}>{paidPaymentDisplay.badge}</Text>
               )}
             </View>
-            <View>
+            <View style={styles.wonPaidMethodText}>
               <Text style={styles.wonPaidMethodTitle}>
                 {paidPaymentDisplay.title}
               </Text>
@@ -1285,7 +1285,7 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
     { label: 'Participaste', value: String(totalParticipated), helper: 'subastas' },
     { label: 'Pujas realizadas', value: String(totalPujas), helper: 'ofertas' },
     { label: 'Productos ganados', value: String(productosGanados), helper: 'ganados' },
-    { label: 'No ganados', value: String(productosNoGanados), helper: 'productos' },
+    { label: 'Productos no ganados', value: String(productosNoGanados), helper: 'no ganados' },
   ];
 
   const categoryMetrics = (metricas?.porCategoria || []).map((item) => ({
@@ -1351,7 +1351,7 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
                 <View style={styles.categoryMetricHeader}>
                   <Text style={styles.categoryName}>{item.category}</Text>
                   <Text style={styles.categoryValue}>
-                    {item.won} productos ganados de {item.participated} participaciones
+                    {item.won} prod. ganados de {item.participated} participaciones
                   </Text>
                 </View>
                 <MiniProgress color={colors.cocoa} value={value} />
@@ -3063,6 +3063,10 @@ const styles = StyleSheet.create({
     padding: 12,
     width: '100%',
   },
+  wonPaidMethodText: {
+    flex: 1,
+    minWidth: 0,
+  },
   visaBadge: {
     alignItems: 'center',
     backgroundColor: '#0057B8',
@@ -3088,13 +3092,17 @@ const styles = StyleSheet.create({
   },
   wonPaidMethodTitle: {
     color: '#510310',
+    flexShrink: 1,
     fontFamily: fonts.bold,
     fontSize: 14,
+    lineHeight: 18,
   },
   wonPaidMethodSubtitle: {
     color: '#510310',
+    flexShrink: 1,
     fontFamily: fonts.regular,
     fontSize: 13,
+    lineHeight: 17,
   },
   wonSuccessNotice: {
     color: '#510310',
