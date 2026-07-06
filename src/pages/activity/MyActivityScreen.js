@@ -97,6 +97,24 @@ function isCheckPaymentMethod(payment) {
   );
 }
 
+function normalizeCurrency(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function hasPaymentCurrencyMismatch(payment, targetCurrency) {
+  const paymentCurrency = normalizeCurrency(payment?.moneda);
+  const purchaseCurrency = normalizeCurrency(targetCurrency);
+
+  return Boolean(paymentCurrency && purchaseCurrency && paymentCurrency !== purchaseCurrency);
+}
+
+function buildCurrencyMismatchMessage(payment, targetCurrency) {
+  const paymentCurrency = normalizeCurrency(payment?.moneda) || 'otra moneda';
+  const purchaseCurrency = normalizeCurrency(targetCurrency) || 'la moneda de la subasta';
+
+  return `El medio de pago seleccionado es en ${paymentCurrency}, pero la subasta es en ${purchaseCurrency}. Por favor, reintentá con un medio de pago en ${purchaseCurrency}.`;
+}
+
 function getPaymentAvailableAmount(payment) {
   if (!isCheckPaymentMethod(payment)) return null;
   const detail = payment?.detalle || {};
@@ -112,6 +130,34 @@ function getPaymentAvailableAmount(payment) {
 function hasInsufficientFunds(payment, amount) {
   const available = getPaymentAvailableAmount(payment);
   return available != null && available < amount;
+}
+
+function isCurrencyMismatchError(error) {
+  const message = [
+    error?.message,
+    typeof error?.payload === 'string' ? error.payload : '',
+    error?.payload?.mensaje,
+    error?.payload?.message,
+    error?.payload?.detail,
+    error?.payload?.detalle,
+    error?.payload?.codigo,
+    error?.payload?.code,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    message.includes('moneda') ||
+    message.includes('currency')
+  ) && (
+    message.includes('medio de pago') ||
+    message.includes('tarjeta') ||
+    message.includes('transferencia') ||
+    message.includes('cuenta') ||
+    message.includes('payment')
+  );
 }
 
 function isInsufficientFundsError(error) {
@@ -629,10 +675,13 @@ function WonAuctionCard({
             {paymentMethods.map((pm, idx) => {
               const isSelected = String(pm.id) === String(currentSelectedPaymentId);
               const isCheck = isCheckPaymentMethod(pm);
+              const isBank = pm.tipo === 'cuentaBancaria';
               const labelText = isCheck
                 ? `Cheque Certificado (${pm.moneda || 'ARS'})`
+                : isBank
+                ? `${pm.brand || 'Transferencia'} (${pm.moneda || 'ARS'})`
                 : `${pm.brand || 'Tarjeta'} •••• ${pm.last4 || '4367'}`;
-              const subText = isCheck ? '' : `Vence ${pm.expiry || '09/27'}`;
+              const subText = isCheck || isBank ? '' : `Vence ${pm.expiry || '09/27'}`;
 
               return (
                 <View key={pm.id || idx}>
@@ -696,7 +745,9 @@ function WonAuctionCard({
                 <ChequePaymentIcon />
               ) : (
                 <Text style={styles.visaBadgeText}>
-                  {(item.paymentMethod?.brand || 'VISA').toUpperCase()}
+                  {item.paymentMethod?.tipo === 'cuentaBancaria'
+                    ? 'BANCO'
+                    : (item.paymentMethod?.brand || 'VISA').toUpperCase()}
                 </Text>
               )}
             </View>
@@ -704,6 +755,8 @@ function WonAuctionCard({
               <Text style={styles.wonPaidMethodTitle}>
                 {item.paymentMethod?.isCheck
                   ? (item.paymentMethod?.number ? `Cheque N° ${item.paymentMethod.number}` : 'Cheque Certificado')
+                  : item.paymentMethod?.tipo === 'cuentaBancaria'
+                  ? `${item.paymentMethod?.brand || 'Transferencia'} (${item.paymentMethod?.moneda || 'ARS'})`
                   : `•••• ${item.paymentMethod?.last4 || '4367'}`}
               </Text>
               <Text style={styles.wonPaidMethodSubtitle}>
@@ -1275,6 +1328,27 @@ function InsufficientFundsModal({ onClose, visible }) {
   );
 }
 
+function CurrencyMismatchModal({ message, onClose, visible }) {
+  return (
+    <AppModal
+      onClose={onClose}
+      showCloseButton={false}
+      visible={visible}
+    >
+      <View style={styles.successModalContent}>
+        <Text style={styles.failureIconX}>x</Text>
+        <Text style={styles.successModalTitle}>No se pudo efectuar el pago</Text>
+        <Text style={styles.insufficientFundsModalBody}>
+          {message}
+        </Text>
+        <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
+          <Text style={styles.modalPrimaryText}>Elegir otro medio</Text>
+        </Pressable>
+      </View>
+    </AppModal>
+  );
+}
+
 export default function MyActivityScreen({ onPayPenalty }) {
   const [activeTab, setActiveTab] = useState('Subastas');
   const [tabData, setTabData] = useState({});
@@ -1291,6 +1365,10 @@ export default function MyActivityScreen({ onPayPenalty }) {
   const [payingItemId, setPayingItemId] = useState(null);
   const [paymentSuccessItem, setPaymentSuccessItem] = useState(null);
   const [insufficientFundsModalVisible, setInsufficientFundsModalVisible] = useState(false);
+  const [currencyMismatchModal, setCurrencyMismatchModal] = useState({
+    message: '',
+    visible: false,
+  });
 
   const loadedTabs = useRef(new Set());
   const loadingTabs = useRef(new Set());
@@ -1491,8 +1569,17 @@ export default function MyActivityScreen({ onPayPenalty }) {
       (compra) => String(compra.id) === String(itemId)
     );
     const totalAmount = getPurchaseTotal(selectedPurchase);
+    const purchaseCurrency = selectedPurchase?.currency;
     const numericItemId = Number(itemId);
     const numericPaymentId = Number(paymentId);
+
+    if (hasPaymentCurrencyMismatch(paymentMethod, purchaseCurrency)) {
+      setCurrencyMismatchModal({
+        message: buildCurrencyMismatchMessage(paymentMethod, purchaseCurrency),
+        visible: true,
+      });
+      return;
+    }
 
     if (hasInsufficientFunds(paymentMethod, totalAmount)) {
       setInsufficientFundsModalVisible(true);
@@ -1514,6 +1601,13 @@ export default function MyActivityScreen({ onPayPenalty }) {
         setPayingItemId(null);
         if (paymentMethod.isCheck && isInsufficientFundsError(err)) {
           setInsufficientFundsModalVisible(true);
+          return;
+        }
+        if (isCurrencyMismatchError(err)) {
+          setCurrencyMismatchModal({
+            message: buildCurrencyMismatchMessage(paymentMethod, purchaseCurrency),
+            visible: true,
+          });
           return;
         }
         setTabError((prev) => ({
@@ -1690,6 +1784,11 @@ export default function MyActivityScreen({ onPayPenalty }) {
       <InsufficientFundsModal
         onClose={() => setInsufficientFundsModalVisible(false)}
         visible={insufficientFundsModalVisible}
+      />
+      <CurrencyMismatchModal
+        message={currencyMismatchModal.message}
+        onClose={() => setCurrencyMismatchModal({ message: '', visible: false })}
+        visible={currencyMismatchModal.visible}
       />
     </View>
   );
