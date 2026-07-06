@@ -1341,15 +1341,49 @@ export default function AuctionProductScreen({ product, subastaId, onAuctionFini
         <View style={styles.descriptionCard}>
           <Text style={styles.descriptionHeading}>Descripción del producto</Text>
           <Text style={styles.descriptionBody}>
-            {productDetails?.descripcionCompleta ?? productDetails?.descripcion_completa ?? 'No hay descripción disponible para este producto.'}
+            {productDetails?.descripcionCompleta ??
+             productDetails?.descripcion_completa ??
+             product?.descripcionCompleta ??
+             product?.descripcion_completa ??
+             'No hay descripción disponible para este producto.'}
           </Text>
 
           <View style={styles.descriptionDivider} />
 
           <DescriptionItem
-            detail={productDetails?.estado === 'nuevo' ? 'Completamente nuevo, sin uso anterior.' : 'En buen estado, usado previamente.'}
-            title={`Estado del artículo: ${productDetails?.estado || 'usado'}`}
+            detail={
+              (productDetails?.estado ?? product?.estado) === 'nuevo'
+                ? 'Completamente nuevo, sin uso anterior.'
+                : 'En buen estado, usado previamente.'
+            }
+            title={`Estado del artículo: ${((productDetails?.estado ?? product?.estado) || 'usado').toUpperCase()}`}
           />
+
+          {Array.isArray(productDetails?.componentes) && productDetails.componentes.length > 0 ? (
+            productDetails.componentes.map((comp, idx) => {
+              const compTitle = comp.nombre || comp.titulo || `Pieza ${idx + 1}`;
+              const compDetail = comp.descripcion || comp.detalle || (comp.estado ? `Estado: ${comp.estado}` : '');
+              return (
+                <DescriptionItem
+                  key={comp.identificador || idx}
+                  title={compTitle}
+                  detail={compDetail}
+                />
+              );
+            })
+          ) : Array.isArray(product?.componentes) && product.componentes.length > 0 ? (
+            product.componentes.map((comp, idx) => {
+              const compTitle = comp.nombre || comp.titulo || `Pieza ${idx + 1}`;
+              const compDetail = comp.descripcion || comp.detalle || (comp.estado ? `Estado: ${comp.estado}` : '');
+              return (
+                <DescriptionItem
+                  key={comp.identificador || idx}
+                  title={compTitle}
+                  detail={compDetail}
+                />
+              );
+            })
+          ) : null}
         </View>
       </View>
 

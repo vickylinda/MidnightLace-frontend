@@ -1,78 +1,3 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
-import {
-  ActivityIndicator,
-  Animated,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-
-import {
-  getAuctionCatalog,
-  getAuctionDetails,
-  getActiveItem,
-} from '../../services/auctionsApi';
-import SubastadoStamp from '../../components/status/SubastadoStamp';
-import { colors } from '../../theme/colors';
-import { fonts } from '../../theme/fonts';
-import { resolveApiAssetUrl, API_BASE_URL } from '../../utils/config';
-import { apiFetch } from '../../utils/http';
-import { getAccessToken } from '../../utils/session';
-
-const referenceColors = {
-  card: '#F6E3D1',
-  text: '#510310',
-};
-
-const CATALOG_PAGE_SIZE = 6;
-const BID_TIME_EXTENSION_SECONDS = 5;
-const BID_TIME_EXTENSION_MS = BID_TIME_EXTENSION_SECONDS * 1000;
-
-function LocationPinIcon({ size = 31 }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 31 31" fill="none">
-      <Path
-        d="M15.5 3.4C10.8 3.4 7 7.2 7 11.9C7 18.1 15.5 27.6 15.5 27.6C15.5 27.6 24 18.1 24 11.9C24 7.2 20.2 3.4 15.5 3.4ZM15.5 15.1C13.7 15.1 12.3 13.7 12.3 11.9C12.3 10.1 13.7 8.7 15.5 8.7C17.3 8.7 18.7 10.1 18.7 11.9C18.7 13.7 17.3 15.1 15.5 15.1Z"
-        fill={colors.burgundy}
-      />
-    </Svg>
-  );
-}
-
-function formatPrice(value) {
-  if (value === undefined || value === null || value === '') {
-    return '-';
-  }
-
-  const amount = Number(value);
-
-  if (!Number.isFinite(amount)) {
-    return value ?? '-';
-  }
-
-  const formattedAmount = new Intl.NumberFormat('es-AR', {
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 0,
-  }).format(amount);
-
-  return `$ ${formattedAmount}`;
-}
-
-function getAuctionStartDate(dateValue, timeValue) {
-  if (!dateValue || !timeValue) {
-    return null;
-  }
-
-  const [year, month, day] = String(dateValue).split('-').map(Number);
-  const [hours, minutes, seconds = 0] = String(timeValue)
-    .split(':')
-    .map(Number);
-  const dateParts = [year, month, day, hours, minutes, seconds];
-
   if (!dateParts.every(Number.isFinite)) {
     return null;
   }
@@ -936,6 +861,201 @@ export default function AuctionDetailScreen({
       ) {
         throw new Error('El catalogo recibido no corresponde a la subasta.');
       }
+              .catch((err) => console.log('Error refreshing catalog:', err));
+          }
+        })
+        .catch((err) => console.log('Error refreshing start:', err));
+    }
+  }, [now, resolvedAuctionId, auctionDetails]);
+
+  useEffect(() => {
+    if (!resolvedAuctionId || auctionDetails?.estado !== 'abierta') {
+      setActiveItem(null);
+      return;
+    }
+
+    let active = true;
+
+    getActiveItem(resolvedAuctionId)
+      .then(async (data) => {
+        if (active) {
+          setActiveItem(data);
+          const activeItemId = data?.idItem ?? data?.id_item;
+          if (activeItemId) {
+            try {
+              const bidsRes = await apiFetch(`/v1/subastas/${resolvedAuctionId}/items/${activeItemId}/pujas?pagina=1&cantidad=20`);
+              const bidsList = Array.isArray(bidsRes) ? bidsRes : (bidsRes?.datos ?? []);
+              const totalCount = bidsRes?.meta?.total ?? bidsList.length;
+              
+              const recentBidders = [...bidsList].reverse().map((b) => ({
+                id: b.identificador,
+                name: b.nombreUsuario ?? b.nombre_usuario ?? 'Comprador',
+                photo: b.fotoPerfil ?? b.urlFotoPerfil ?? b.foto_perfil ?? b.url_foto_perfil ?? null,
+              })).slice(0, 4);
+
+              setRecentBiddersMap((prevMap) => ({
+                ...prevMap,
+                [activeItemId]: { totalCount, recentBidders },
+              }));
+            } catch (err) {
+              console.log('Error loading initial bids for active item:', err);
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        console.log('Error fetching active item:', err);
+      });
+
+    const wsBase = API_BASE_URL.replace(/^http/, 'ws');
+    const token = getAccessToken();
+    const wsUrl = `${wsBase}/v1/ws/subastas/${resolvedAuctionId}${token ? `?token=${token}` : ''}`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log('WebSocket event:', message);
+        if (message.evento === 'nuevaPuja') {
+          const datos = message.datos;
+          const datosIdItem = datos?.idItem ?? datos?.id_item;
+          if (active && datosIdItem) {
+            const currentActiveItem = activeItemRef.current;
+            const currentActiveItemId =
+              currentActiveItem?.idItem ?? currentActiveItem?.id_item;
+            const isBidForActiveItem =
+              currentActiveItem &&
+              Number(currentActiveItemId) === Number(datosIdItem);
+
+            if (isBidForActiveItem) {
+              triggerTimeExtensionAnimation();
+            }
+
+            const newBidder = {
+              id: datos.idPuja ?? datos.id_puja ?? Date.now(),
+              name: datos.nombreUsuario ?? datos.nombre_usuario ?? 'Comprador',
+              photo: datos.fotoPerfil ?? datos.urlFotoPerfil ?? datos.foto_perfil ?? datos.url_foto_perfil ?? null,
+            };
+
+            setRecentBiddersMap((prevMap) => {
+              const current = prevMap[datosIdItem] || { totalCount: 0, recentBidders: [] };
+              const filtered = (current.recentBidders || []).filter((b) => b.name !== newBidder.name);
+              const updatedList = [newBidder, ...filtered].slice(0, 4);
+              return {
+                ...prevMap,
+                [datosIdItem]: {
+                  totalCount: (current.totalCount || 0) + 1,
+                  recentBidders: updatedList,
+                },
+              };
+            });
+
+            setActiveItem((current) => {
+              const currentIdItem = current?.idItem ?? current?.id_item;
+              if (current && Number(currentIdItem) === Number(datosIdItem)) {
+                const nextEndTime = getExtendedBidEndTime(current, datos);
+                return {
+                  ...current,
+                  mejorOferta: datos.importe,
+                  mejor_oferta: datos.importe,
+                  pujaMinima: datos.pujaMinima ?? datos.puja_minima,
+                  puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                  pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
+                  puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
+                  finalizaEn: nextEndTime,
+                  finaliza_en: nextEndTime,
+                };
+              }
+              return current;
+            });
+          }
+        } else if (message.evento === 'cambioItem') {
+          const datos = message.datos;
+          if (active) {
+            timeExtensionAnim.stopAnimation();
+            timeExtensionAnim.setValue(0);
+            setActiveItem(datos.itemActual);
+            if (datos.itemAnterior) {
+              const prevIdItem = datos.itemAnterior.idItem ?? datos.itemAnterior.id_item;
+              setLots((currentLots) =>
+                currentLots.map((lot) => {
+                  if (Number(lot.identificador) === Number(prevIdItem)) {
+                    const finalPrice = datos.itemAnterior.mejorOferta ?? datos.itemAnterior.mejor_oferta ?? datos.itemAnterior.precioFinal ?? datos.itemAnterior.precio_final;
+                    return { ...lot, subastado: 'si', mejorOferta: finalPrice ?? lot.mejorOferta };
+                  }
+                  return lot;
+                })
+              );
+            }
+          }
+        } else if (message.evento === 'subastaFinalizada') {
+          if (active) {
+            timeExtensionAnim.stopAnimation();
+            timeExtensionAnim.setValue(0);
+            setActiveItem(null);
+            getAuctionDetails(resolvedAuctionId)
+              .then((details) => {
+                if (active) {
+                  setAuctionDetails(details);
+                }
+              })
+              .catch((err) => console.log('Error refreshing auction details on finish:', err));
+          }
+        }
+      } catch (err) {
+        console.log('Error parsing WebSocket message:', err);
+      }
+    };
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      if (active) setWsStatus('connected');
+    };
+
+    ws.onerror = (err) => {
+      console.log('WebSocket error:', err);
+      if (active) setWsStatus('error');
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket closed');
+      if (active) setWsStatus('disconnected');
+    };
+
+    return () => {
+      active = false;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [resolvedAuctionId, auctionDetails?.estado, timeExtensionAnim, triggerTimeExtensionAnimation]);
+
+  async function handleLoadMore() {
+    if (!hasMoreLots || isLoadingMore) {
+      return;
+    }
+
+    const nextPage = catalogPage + 1;
+    setIsLoadingMore(true);
+    setLoadMoreError('');
+
+    try {
+      const catalog = await getAuctionCatalog(
+        resolvedAuctionId,
+        nextPage,
+        CATALOG_PAGE_SIZE
+      );
+
+      if (
+        catalog?.idSubasta !== undefined &&
+        String(catalog.idSubasta) !== String(resolvedAuctionId)
+      ) {
+        throw new Error('El catalogo recibido no corresponde a la subasta.');
+      }
 
       const nextLots = Array.isArray(catalog?.items) ? catalog.items : [];
       setLots((currentLots) => [...currentLots, ...nextLots]);
@@ -1018,67 +1138,82 @@ export default function AuctionDetailScreen({
           <View style={styles.feedbackCard}>
             <Text style={styles.feedbackText}>{errorMessage}</Text>
           </View>
-        ) : lots.length === 0 ? (
-          <View style={styles.feedbackCard}>
-            <Text style={styles.feedbackText}>
-              Esta subasta todavia no tiene productos en su catalogo.
-            </Text>
-          </View>
-        ) : (
-          <>
-            <View style={styles.lotList}>
-              {lots.map((lot, index) => {
-                const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
-                const isActive = activeItem && activeItemId && Number(lot.identificador) === Number(activeItemId);
-                const isFinished = lot.subastado === 'si';
-                return (
-                  <ProductLotCard
-                    currency={auctionDetails?.moneda}
-                    imageSize={imageSize}
-                    key={String(lot.identificador ?? lot.idProducto ?? index)}
-                    lot={lot}
-                    onPress={() => onProductPress?.(lot)}
-                    isActive={isActive}
-                    isFinished={isFinished}
-                    activeItemData={activeItem}
-                    timeExtensionAnimation={timeExtensionAnim}
-                    now={now + serverTimeOffsetRef.current}
-                    biddersInfo={recentBiddersMap[lot.identificador] || recentBiddersMap[lot.idProducto]}
-                  />
-                );
-              })}
-            </View>
+        ) : (() => {
+          const visibleLots = lots.filter((lot) => {
+            const estadoProd =
+              lot.estadoProducto ??
+              lot.estado_producto ??
+              lot.producto?.estadoProducto ??
+              lot.producto?.estado_producto;
+            if (!estadoProd) return true;
+            const norm = String(estadoProd).toLowerCase().trim();
+            return norm === 'en_subasta' || norm === 'ensubasta';
+          });
 
-            {loadMoreError ? (
-              <Text style={styles.loadMoreError}>{loadMoreError}</Text>
-            ) : null}
+          if (visibleLots.length === 0) {
+            return (
+              <View style={styles.feedbackCard}>
+                <Text style={styles.feedbackText}>
+                  Esta subasta todavia no tiene productos en su catalogo.
+                </Text>
+              </View>
+            );
+          }
 
-            {hasMoreLots ? (
-              <Pressable
-                accessibilityLabel="Ver más productos"
-                accessibilityRole="button"
-                disabled={isLoadingMore}
-                onPress={handleLoadMore}
-                style={({ pressed }) => [
-                  styles.loadMoreButton,
-                  pressed ? styles.loadMoreButtonPressed : null,
-                  isLoadingMore ? styles.loadMoreButtonDisabled : null,
-                ]}
-              >
-                {isLoadingMore ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Text style={styles.loadMoreText}>Ver más</Text>
-                )}
-              </Pressable>
-            ) : null}
-          </>
-        )}
+          return (
+            <>
+              <View style={styles.lotList}>
+                {visibleLots.map((lot, index) => {
+                  const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
+                  const isActive = activeItem && activeItemId && Number(lot.identificador) === Number(activeItemId);
+                  const isFinished = lot.subastado === 'si';
+                  return (
+                    <ProductLotCard
+                      currency={auctionDetails?.moneda}
+                      imageSize={imageSize}
+                      key={String(lot.identificador ?? lot.idProducto ?? index)}
+                      lot={lot}
+                      onPress={() => onProductPress?.(lot)}
+                      isActive={isActive}
+                      isFinished={isFinished}
+                      activeItemData={activeItem}
+                      timeExtensionAnimation={timeExtensionAnim}
+                      now={now + serverTimeOffsetRef.current}
+                      biddersInfo={recentBiddersMap[lot.identificador] || recentBiddersMap[lot.idProducto]}
+                    />
+                  );
+                })}
+              </View>
+
+              {loadMoreError ? (
+                <Text style={styles.loadMoreError}>{loadMoreError}</Text>
+              ) : null}
+
+              {hasMoreLots ? (
+                <Pressable
+                  accessibilityLabel="Ver más productos"
+                  accessibilityRole="button"
+                  disabled={isLoadingMore}
+                  onPress={handleLoadMore}
+                  style={({ pressed }) => [
+                    styles.loadMoreButton,
+                    pressed ? styles.loadMoreButtonPressed : null,
+                    isLoadingMore ? styles.loadMoreButtonDisabled : null,
+                  ]}
+                >
+                  {isLoadingMore ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Text style={styles.loadMoreText}>Ver más</Text>
+                  )}
+                </Pressable>
+              ) : null}
+            </>
+          );
+        })()}
       </View>
     </View>
   );
-}
-
 const styles = StyleSheet.create({
   screen: {
     alignItems: 'center',
@@ -1128,10 +1263,6 @@ const styles = StyleSheet.create({
     paddingRight: 11,
     paddingTop: 10,
     width: '100%',
-  },
-  countdownBlock: {
-    flex: 1,
-    minWidth: 0,
   },
   countdownLabel: {
     color: colors.burgundy,
