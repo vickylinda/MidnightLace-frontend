@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Image,
   Pressable,
@@ -204,10 +204,6 @@ function WebCameraView({ style, children }) {
           })
         )}
 
-        <View style={styles.cameraLiveOverlay}>
-          <View style={styles.cameraLiveDot} />
-          <Text style={styles.cameraLiveText}>EN VIVO</Text>
-        </View>
         {children}
       </View>
     );
@@ -218,10 +214,6 @@ function WebCameraView({ style, children }) {
       <Text style={{ color: '#fff', textAlign: 'center', fontSize: 13, fontFamily: fonts.medium }}>
         Transmisión en Vivo activa
       </Text>
-      <View style={styles.cameraLiveOverlay}>
-        <View style={styles.cameraLiveDot} />
-        <Text style={styles.cameraLiveText}>EN VIVO</Text>
-      </View>
       {children}
     </View>
   );
@@ -306,7 +298,7 @@ function DescriptionItem({ detail, title }) {
   );
 }
 
-export default function AuctionProductScreen({ product, subastaId }) {
+export default function AuctionProductScreen({ product, subastaId, onAuctionFinished }) {
   const { width } = useWindowDimensions();
   const [subastaDetails, setSubastaDetails] = useState(null);
   const [productDetails, setProductDetails] = useState(null);
@@ -333,6 +325,26 @@ export default function AuctionProductScreen({ product, subastaId }) {
 
   const currentUserId = getUserId();
   const currency = subastaDetails?.moneda || product.moneda || 'USD';
+
+  // Helper function to trigger swap back navigation
+  const triggerSwapBack = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auction_swap_back'));
+    }
+    if (onAuctionFinished) {
+      onAuctionFinished();
+    }
+  }, [onAuctionFinished]);
+
+  // Effect when subasta state changes to finalizada
+  useEffect(() => {
+    if (subastaDetails && subastaDetails.estado === 'finalizada') {
+      const timer = setTimeout(() => {
+        triggerSwapBack();
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [subastaDetails, triggerSwapBack]);
 
   // Format price helper
   const formatPrice = (amount, curr) => {
@@ -436,6 +448,12 @@ export default function AuctionProductScreen({ product, subastaId }) {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
+        if (message.evento === 'subastaFinalizada' || message.evento === 'itemSubastado' || message.evento === 'cambioItem') {
+          console.log('[Product Details] Received auction end/item change WS event:', message.evento);
+          triggerSwapBack();
+          return;
+        }
+
         if (message.evento === 'nuevaPuja') {
           const datos = message.datos;
           const datosIdItem = datos.idItem ?? datos.id_item;
@@ -668,7 +686,7 @@ export default function AuctionProductScreen({ product, subastaId }) {
   };
 
   // Render 4 mini bid buttons (+1%, +5%, +10%, +20%)
-  const renderBidOptions = () => {
+  const renderBidOptions = (isModal = false) => {
     const baseVal = Number(product.precioBase || productDetails?.precioBase || 0);
     const inc1 = Math.max(1, Math.round(baseVal * 0.01));
     const inc2 = Math.max(inc1 + 1, Math.round(baseVal * 0.05));
@@ -679,11 +697,11 @@ export default function AuctionProductScreen({ product, subastaId }) {
     const isDisabled = !isBeingSubastado || !bidPermission.canBid;
 
     return (
-      <View style={styles.bidButtonsContainer}>
+      <View style={[styles.bidButtonsContainer, isModal && { paddingHorizontal: 0, marginTop: 12 }]}>
         <View style={styles.bidButtonsRow}>
           {options.map((inc, index) => {
             const formattedInc = new Intl.NumberFormat('es-AR').format(inc);
-            const label = `+ $ ${formattedInc}`;
+            const label = `$ ${formattedInc}`;
 
             return (
               <Pressable
@@ -1122,6 +1140,23 @@ export default function AuctionProductScreen({ product, subastaId }) {
             />
           ) : null}
 
+          {!isBeingSubastado ? (
+            <View
+              style={[
+                styles.conditionBadge,
+                isNuevo ? styles.conditionBadgeNuevo : styles.conditionBadgeUsado,
+                {
+                  position: 'absolute',
+                  left: Math.max(8, 11 * scale),
+                  top: Math.max(3, 5 * scale),
+                  zIndex: 10,
+                },
+              ]}
+            >
+              <Text style={styles.conditionBadgeText}>{productStateLabel}</Text>
+            </View>
+          ) : null}
+
           <View
             style={{
               height: mainImageSize,
@@ -1171,11 +1206,6 @@ export default function AuctionProductScreen({ product, subastaId }) {
                 {formatPrice(product.precioBase)}
               </Text>
             ) : null}
-            <View style={[styles.conditionBadge, isNuevo ? styles.conditionBadgeNuevo : styles.conditionBadgeUsado]}>
-              <Text style={[styles.conditionBadgeText, isNuevo ? styles.conditionBadgeTextNuevo : styles.conditionBadgeTextUsado]}>
-                {productStateLabel}
-              </Text>
-            </View>
           </View>
         ) : null}
 
@@ -1348,7 +1378,7 @@ export default function AuctionProductScreen({ product, subastaId }) {
               )}
             </WebCameraView>
 
-            {isBeingSubastado ? renderBidOptions() : null}
+            {isBeingSubastado ? renderBidOptions(true) : null}
           </View>
         </View>
       </Modal>
@@ -1434,45 +1464,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 10,
     paddingHorizontal: 18,
     width: '100%',
   },
   priceLeft: {
     color: colors.statusGreenBorder,
     fontFamily: fonts.bold,
-    fontSize: 22,
+    fontSize: 28,
     letterSpacing: 0,
-    lineHeight: 26,
+    lineHeight: 32,
     textAlign: 'left',
   },
   conditionBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
-    borderWidth: 1,
-    marginLeft: 10,
+    borderWidth: 0,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 3,
   },
   conditionBadgeNuevo: {
-    backgroundColor: 'rgba(92, 176, 74, 0.15)',
-    borderColor: '#498E3C',
+    backgroundColor: '#9FB98D',
   },
   conditionBadgeUsado: {
-    backgroundColor: 'rgba(224, 102, 28, 0.15)',
-    borderColor: '#E0661C',
+    backgroundColor: '#F4A261',
   },
   conditionBadgeText: {
+    color: '#FFFFFF',
     fontFamily: fonts.bold,
     fontSize: 11,
     letterSpacing: 0.5,
   },
   conditionBadgeTextNuevo: {
-    color: '#2E6B23',
+    color: '#FFFFFF',
   },
   conditionBadgeTextUsado: {
-    color: '#D35400',
+    color: '#FFFFFF',
   },
   infoGrid: {
     columnGap: 6,
@@ -1581,9 +1614,10 @@ const styles = StyleSheet.create({
   },
   bidButtonsContainer: {
     alignItems: 'center',
-    alignSelf: 'center',
+    alignSelf: 'stretch',
     marginTop: 16,
-    width: '90.8%',
+    paddingHorizontal: 11,
+    width: '100%',
   },
   bidButtonsRow: {
     columnGap: 8,

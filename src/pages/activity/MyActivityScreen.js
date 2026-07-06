@@ -77,6 +77,115 @@ function isTruthyFlag(value) {
   return ['si', 'true', '1'].includes(String(value).trim().toLowerCase());
 }
 
+function parseMoney(value) {
+  if (typeof value === 'number') return value;
+  const normalized = String(value || '')
+    .replace(/[^\d,.-]/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function isCheckPaymentMethod(payment) {
+  const type = String(payment?.tipo || '').trim();
+  return (
+    payment?.isCheck ||
+    type === 'chequeCertificado' ||
+    type === 'cheque_certificado' ||
+    type === 'cheque'
+  );
+}
+
+function getPaymentAvailableAmount(payment) {
+  if (!isCheckPaymentMethod(payment)) return null;
+  const detail = payment?.detalle || {};
+  const rawAmount =
+    payment?.availableAmount ??
+    detail.montoDisponible ??
+    detail.montoGarantizado ??
+    detail.amount;
+
+  return rawAmount == null ? null : parseMoney(rawAmount);
+}
+
+function hasInsufficientFunds(payment, amount) {
+  const available = getPaymentAvailableAmount(payment);
+  return available != null && available < amount;
+}
+
+function isInsufficientFundsError(error) {
+  const message = [
+    error?.message,
+    typeof error?.payload === 'string' ? error.payload : '',
+    error?.payload?.mensaje,
+    error?.payload?.message,
+    error?.payload?.detail,
+    error?.payload?.detalle,
+    error?.payload?.codigo,
+    error?.payload?.code,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    message.includes('fondos insuficientes') ||
+    message.includes('saldo insuficiente') ||
+    (message.includes('fondo') && message.includes('insuficiente')) ||
+    (message.includes('saldo') && message.includes('insuficiente')) ||
+    (message.includes('insuficiente') && message.includes('disponible')) ||
+    message.includes('insufficient funds')
+  );
+}
+
+function normalizePaymentMethod(payment) {
+  const detail = payment?.detalle || {};
+  const isCheck = isCheckPaymentMethod(payment);
+
+  return {
+    id: String(payment?.identificador || payment?.id || ''),
+    tipo: payment?.tipo,
+    moneda: payment?.moneda,
+    isCheck,
+    brand: isCheck
+      ? 'Cheque'
+      : detail.red ||
+        detail.nombreBanco ||
+        payment?.brand ||
+        (payment?.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
+    last4:
+      detail.ultimosCuatroDigitos ||
+      detail.ultimos4 ||
+      payment?.last4 ||
+      detail.cbu?.slice(-4) ||
+      '0000',
+    number: detail.numero || payment?.number || payment?.identificador || payment?.id,
+    availableAmount: getPaymentAvailableAmount(payment),
+    expiry: formatPaymentExpiration(
+      detail.vencimiento || detail.fechaVencimiento || payment?.expiry
+    ),
+    cardholder:
+      detail.titular ||
+      detail.nombreTitular ||
+      payment?.cardholder ||
+      'Juana Mendez',
+  };
+}
+
+function getPurchaseTotal(item) {
+  const finalPrice = Number(item?.finalPrice ?? 140);
+  const shipping = Number(item?.shipping ?? 0);
+  const commission = Number(item?.commission ?? 20);
+
+  return (
+    (Number.isFinite(finalPrice) ? finalPrice : 0) +
+    (Number.isFinite(shipping) ? shipping : 0) +
+    (Number.isFinite(commission) ? commission : 0)
+  );
+}
+
 function mapSubasta(s) {
   const hora = s.hora ? ` · ${String(s.hora).slice(0, 5)}h` : '';
   return {
@@ -161,20 +270,7 @@ function mapCompra(r) {
         ? formatAmount(r.importeMulta ?? r.montoMulta, r.moneda)
         : '$300 USD',
     paidDate: pagado && r.fechaPago ? formatDateOnly(r.fechaPago) : null,
-    paymentMethod: pagado
-      ? {
-          brand: medioPago?.detalle?.red || medioPago?.brand || 'Visa',
-          last4:
-            medioPago?.detalle?.ultimosCuatroDigitos ||
-            medioPago?.last4 ||
-            '4367',
-          cardholder:
-            medioPago?.detalle?.titular ||
-            medioPago?.detalle?.nombreTitular ||
-            medioPago?.cardholder ||
-            'Juana Mendez',
-        }
-      : null,
+    paymentMethod: pagado ? normalizePaymentMethod(medioPago) : null,
     retiraPersonalmente,
     pickup: r.direccionRetiro || null,
     pickupAddress: r.direccionRetiroTexto || null,
@@ -227,6 +323,32 @@ function InfoIcon() {
     <Svg width={19} height={19} viewBox="0 0 24 24" fill="none">
       <Circle cx={12} cy={12} r={10} fill={colors.burgundy} />
       <Path d="M12 10.8V17M12 7.2H12.01" stroke={colors.cream} strokeLinecap="round" strokeWidth={2.1} />
+    </Svg>
+  );
+}
+
+function ChequePaymentIcon() {
+  return (
+    <Svg width={32} height={22} viewBox="0 0 40 28" fill="none">
+      <Path
+        d="M4 5.5H36V22.5H4V5.5Z"
+        stroke="#FFFFFF"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M9 11H21M9 17H16"
+        stroke="#FFFFFF"
+        strokeLinecap="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M25 17.2L28.1 20.2L34 13.5"
+        stroke="#FFFFFF"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.4}
+      />
     </Svg>
   );
 }
@@ -434,7 +556,7 @@ function WonAuctionCard({
   const shipping = item.shipping ?? 0;
   const commission = item.commission ?? 20;
   const currency = item.currency || 'USD';
-  const totalAmount = finalPrice + shipping + commission;
+  const totalAmount = getPurchaseTotal(item);
 
   const formattedFinalPrice = `$${formatNumberWithDots(finalPrice)} ${currency}`;
   const formattedShipping = `$${formatNumberWithDots(shipping)} ${currency} (recogida en tienda)`;
@@ -506,6 +628,12 @@ function WonAuctionCard({
           <View style={styles.wonPaymentCardsTable}>
             {paymentMethods.map((pm, idx) => {
               const isSelected = String(pm.id) === String(currentSelectedPaymentId);
+              const isCheck = isCheckPaymentMethod(pm);
+              const labelText = isCheck
+                ? `Cheque Certificado (${pm.moneda || 'ARS'})`
+                : `${pm.brand || 'Tarjeta'} •••• ${pm.last4 || '4367'}`;
+              const subText = isCheck ? '' : `Vence ${pm.expiry || '09/27'}`;
+
               return (
                 <View key={pm.id || idx}>
                   {idx > 0 && <View style={styles.wonPaymentSeparator} />}
@@ -518,12 +646,14 @@ function WonAuctionCard({
                         {isSelected ? <View style={styles.wonRadioDot} /> : null}
                       </View>
                       <Text style={styles.wonPaymentText}>
-                        {pm.brand || 'Visa'} •••• {pm.last4 || '4367'}
+                        {labelText}
                       </Text>
                     </View>
-                    <Text style={styles.wonPaymentExpiry}>
-                      Vence {pm.expiry || '09/27'}
-                    </Text>
+                    {subText ? (
+                      <Text style={styles.wonPaymentExpiry}>
+                        {subText}
+                      </Text>
+                    ) : null}
                   </Pressable>
                 </View>
               );
@@ -561,14 +691,20 @@ function WonAuctionCard({
 
           <Text style={[styles.wonSectionTitle, { marginTop: 12 }]}>Metodo de pago</Text>
           <View style={styles.wonPaidMethodCard}>
-            <View style={styles.visaBadge}>
-              <Text style={styles.visaBadgeText}>
-                {(item.paymentMethod?.brand || 'VISA').toUpperCase()}
-              </Text>
+            <View style={[styles.visaBadge, item.paymentMethod?.isCheck ? styles.chequeBadge : null]}>
+              {item.paymentMethod?.isCheck ? (
+                <ChequePaymentIcon />
+              ) : (
+                <Text style={styles.visaBadgeText}>
+                  {(item.paymentMethod?.brand || 'VISA').toUpperCase()}
+                </Text>
+              )}
             </View>
             <View>
               <Text style={styles.wonPaidMethodTitle}>
-                •••• {item.paymentMethod?.last4 || '4367'}
+                {item.paymentMethod?.isCheck
+                  ? (item.paymentMethod?.number ? `Cheque N° ${item.paymentMethod.number}` : 'Cheque Certificado')
+                  : `•••• ${item.paymentMethod?.last4 || '4367'}`}
               </Text>
               <Text style={styles.wonPaidMethodSubtitle}>
                 {item.paymentMethod?.cardholder || 'Juana Mendez'}
@@ -937,7 +1073,7 @@ function MetricsContent({ metricas, monthlyBidHistory }) {
   );
 }
 
-function AppModal({ children, onClose, title, visible }) {
+function AppModal({ children, onClose, showCloseButton = true, title, visible }) {
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
@@ -945,17 +1081,19 @@ function AppModal({ children, onClose, title, visible }) {
           {title ? (
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{title}</Text>
-              <Pressable onPress={onClose} style={styles.modalCloseButton}>
-                <Text style={styles.modalCloseText}>x</Text>
-              </Pressable>
+              {showCloseButton ? (
+                <Pressable onPress={onClose} style={styles.modalCloseButton}>
+                  <Text style={styles.modalCloseText}>x</Text>
+                </Pressable>
+              ) : null}
             </View>
-          ) : (
+          ) : showCloseButton ? (
             <View style={styles.modalHeaderNoTitle}>
               <Pressable onPress={onClose} style={styles.modalCloseButton}>
                 <Text style={styles.modalCloseText}>x</Text>
               </Pressable>
             </View>
-          )}
+          ) : null}
           {children}
         </View>
       </View>
@@ -1095,7 +1233,7 @@ function PaymentSuccessModal({ item, onClose }) {
   const formattedTotal = `$${formatNumberWithDots(totalAmount)} ${item.currency || 'USD'}`;
 
   return (
-    <AppModal onClose={onClose} visible={Boolean(item)}>
+    <AppModal onClose={onClose} showCloseButton={false} visible={Boolean(item)}>
       <View style={styles.successModalContent}>
         <View style={styles.successIconCircle}>
           <Text style={styles.successIconCheck}>✓</Text>
@@ -1110,6 +1248,27 @@ function PaymentSuccessModal({ item, onClose }) {
         </Text>
         <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
           <Text style={styles.modalPrimaryText}>Entendido</Text>
+        </Pressable>
+      </View>
+    </AppModal>
+  );
+}
+
+function InsufficientFundsModal({ onClose, visible }) {
+  return (
+    <AppModal
+      onClose={onClose}
+      showCloseButton={false}
+      visible={visible}
+    >
+      <View style={styles.successModalContent}>
+        <Text style={styles.failureIconX}>x</Text>
+        <Text style={styles.successModalTitle}>No se pudo efectuar el pago</Text>
+        <Text style={styles.insufficientFundsModalBody}>
+          El cheque seleccionado no tiene fondos suficientes para cubrir esta compra. Por favor, reintentá con otro medio de pago.
+        </Text>
+        <Pressable onPress={onClose} style={styles.modalPrimaryButton}>
+          <Text style={styles.modalPrimaryText}>Elegir otro medio</Text>
         </Pressable>
       </View>
     </AppModal>
@@ -1131,6 +1290,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState({});
   const [payingItemId, setPayingItemId] = useState(null);
   const [paymentSuccessItem, setPaymentSuccessItem] = useState(null);
+  const [insufficientFundsModalVisible, setInsufficientFundsModalVisible] = useState(false);
 
   const loadedTabs = useRef(new Set());
   const loadingTabs = useRef(new Set());
@@ -1143,19 +1303,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
         if (paymentMethods.length > 0) {
           setUserPaymentMethods(
-            paymentMethods.map((pm) => ({
-              id: String(pm.identificador || pm.id),
-              brand:
-                pm.detalle?.red ||
-                pm.detalle?.nombreBanco ||
-                (pm.tipo === 'cuentaBancaria' ? 'Banco' : 'Visa'),
-              last4:
-                pm.detalle?.ultimos4 ||
-                pm.detalle?.cbu?.slice(-4) ||
-                '0000',
-              expiry: formatPaymentExpiration(pm.detalle?.vencimiento),
-              cardholder: pm.detalle?.titular || 'Juana Mendez',
-            }))
+            paymentMethods.map((pm) => normalizePaymentMethod(pm))
           );
         }
       } catch (err) {
@@ -1226,7 +1374,7 @@ export default function MyActivityScreen({ onPayPenalty }) {
             fineAmount: '$300 USD',
             paidDate: isPagado ? formatDateStr(new Date(compra.fechaPago)) : null,
             paymentMethod: isPagado
-              ? { brand: 'Visa', last4: '4367', cardholder: 'Juana Mendez' }
+              ? normalizePaymentMethod(compra.medioPago || compra.paymentMethod)
               : null,
             identificador: compra.identificador,
             retiraPersonalmente: compra.retiraPersonalmente,
@@ -1334,13 +1482,24 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
   async function handlePayWonAuction(itemId, paymentId) {
     if (payingItemId) return;
-    setPayingItemId(itemId);
 
-    const paymentMethod =
+    const selectedPaymentMethod =
       userPaymentMethods.find((p) => String(p.id) === String(paymentId)) ||
       userPaymentMethods[0];
+    const paymentMethod = normalizePaymentMethod(selectedPaymentMethod);
+    const selectedPurchase = (tabData.Compras || []).find(
+      (compra) => String(compra.id) === String(itemId)
+    );
+    const totalAmount = getPurchaseTotal(selectedPurchase);
     const numericItemId = Number(itemId);
     const numericPaymentId = Number(paymentId);
+
+    if (hasInsufficientFunds(paymentMethod, totalAmount)) {
+      setInsufficientFundsModalVisible(true);
+      return;
+    }
+
+    setPayingItemId(itemId);
 
     // 2-second loading animation delay as requested
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -1353,6 +1512,10 @@ export default function MyActivityScreen({ onPayPenalty }) {
         });
       } catch (err) {
         setPayingItemId(null);
+        if (paymentMethod.isCheck && isInsufficientFundsError(err)) {
+          setInsufficientFundsModalVisible(true);
+          return;
+        }
         setTabError((prev) => ({
           ...prev,
           Compras: getApiErrorMessage(err, 'No se pudo registrar el pago.'),
@@ -1523,6 +1686,10 @@ export default function MyActivityScreen({ onPayPenalty }) {
       <PaymentSuccessModal
         item={paymentSuccessItem}
         onClose={() => setPaymentSuccessItem(null)}
+      />
+      <InsufficientFundsModal
+        onClose={() => setInsufficientFundsModalVisible(false)}
+        visible={insufficientFundsModalVisible}
       />
     </View>
   );
@@ -2522,6 +2689,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 24,
   },
+  failureIconX: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 48,
+    lineHeight: 52,
+    marginBottom: 6,
+  },
   successModalTitle: {
     color: colors.burgundy,
     fontFamily: fonts.bold,
@@ -2538,6 +2712,17 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     paddingHorizontal: 4,
     textAlign: 'center',
+    width: '100%',
+  },
+  insufficientFundsModalBody: {
+    alignSelf: 'stretch',
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 22,
+    marginVertical: 8,
+    paddingHorizontal: 0,
+    textAlign: 'justify',
     width: '100%',
   },
   successModalStrongText: {
@@ -2581,9 +2766,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#0057B8',
     borderRadius: 4,
+    minHeight: 30,
+    minWidth: 52,
     justifyContent: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
+  },
+  chequeBadge: {
+    backgroundColor: colors.burgundy,
+    minHeight: 34,
+    minWidth: 58,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
   },
   visaBadgeText: {
     color: '#FFFFFF',

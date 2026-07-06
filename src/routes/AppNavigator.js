@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as ExpoSplashScreen from 'expo-splash-screen';
-import { Platform } from 'react-native';
+import { Animated, Platform } from 'react-native';
 
 import { useNotifications } from '../context/NotificationsContext';
 import { hasRole, loadSession } from '../utils/session';
@@ -374,20 +374,32 @@ export default function AppNavigator() {
     return null;
   }
 
-  function handleBackPress() {
+  const performSwapBack = useCallback(() => {
     const previousRoute =
       routeHistory[routeHistory.length - 1] || getFallbackBackRoute(currentRoute);
 
-    if (!previousRoute || previousRoute === currentRoute) {
-      return;
+    if (previousRoute && previousRoute !== currentRoute) {
+      setIsLoading(false);
+      setRouteHistory((currentHistory) =>
+        currentHistory.length > 0 ? currentHistory.slice(0, -1) : currentHistory
+      );
+      setCurrentRoute(previousRoute);
+      updateBrowserRoute(previousRoute, true);
     }
+  }, [currentRoute, routeHistory]);
 
-    setIsLoading(false);
-    setRouteHistory((currentHistory) =>
-      currentHistory.length > 0 ? currentHistory.slice(0, -1) : currentHistory
-    );
-    setCurrentRoute(previousRoute);
-    updateBrowserRoute(previousRoute, true);
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleSwap = () => {
+        performSwapBack();
+      };
+      window.addEventListener('auction_swap_back', handleSwap);
+      return () => window.removeEventListener('auction_swap_back', handleSwap);
+    }
+  }, [performSwapBack]);
+
+  function handleBackPress() {
+    performSwapBack();
   }
 
   function handleAuctionPress(auction) {
@@ -514,6 +526,7 @@ export default function AppNavigator() {
           <AuctionProductScreen
             product={selectedAuctionProduct}
             subastaId={selectedAuction?.identificador ?? selectedAuction?.id}
+            onAuctionFinished={performSwapBack}
           />
         ) : null
       ) : currentRoute === ROUTES.auctionDetail ? (
