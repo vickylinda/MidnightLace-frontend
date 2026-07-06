@@ -1385,7 +1385,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   timeExtensionBadge: {
-    color: colors.statusGreenBorder,
+    color: colors.statusGreen,
     fontFamily: fonts.bold,
     fontSize: 12,
     lineHeight: 16,

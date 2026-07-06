@@ -10,6 +10,7 @@ import { fonts } from '../../theme/fonts';
 import { resolveApiAssetUrl } from '../../utils/config';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
 import { formatMoney } from '../../utils/money';
+import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
 
 const tabs = ['Subastas', 'Compras', 'Pujas', 'Multas', 'Metricas'];
 const tabLabels = {
@@ -1448,6 +1449,7 @@ function CurrencyMismatchModal({ message, onClose, visible }) {
 }
 
 export default function MyActivityScreen({ onPayPenalty }) {
+  const { showAscensoModal } = useWinnerModal();
   const [activeTab, setActiveTab] = useState('Subastas');
   const [tabData, setTabData] = useState({});
   const [tabLoading, setTabLoading] = useState({});
@@ -1600,10 +1602,14 @@ export default function MyActivityScreen({ onPayPenalty }) {
 
     if (Number.isFinite(numericItemId) && numericItemId > 0) {
       try {
-        await apiFetch(`/v1/mi/compras/${itemId}/pagar`, {
+        const res = await apiFetch(`/v1/mi/compras/${itemId}/pagar`, {
           body: Number.isFinite(numericPaymentId) ? { idMedioPago: numericPaymentId } : {},
           method: 'POST',
         });
+
+        if (res?.ascenso && showAscensoModal) {
+          showAscensoModal(res.ascenso);
+        }
       } catch (err) {
         setPayingItemId(null);
         if (paymentMethod.isCheck && isInsufficientFundsError(err)) {

@@ -254,6 +254,7 @@ function ConfettiCannon() {
 
 const WinnerModalContext = createContext({
   triggerWinnerModal: () => {},
+  showAscensoModal: () => {},
 });
 
 export function WinnerModalProvider({ children }) {
@@ -273,6 +274,28 @@ export function WinnerModalProvider({ children }) {
     title: '',
     message: '',
   });
+
+  const [ascensoModal, setAscensoModal] = useState({
+    visible: false,
+    categoriaAnterior: '',
+    nuevaCategoria: '',
+    mensaje: '',
+  });
+  const pendingPromotionRef = useRef(null);
+
+  const handleClosePaymentResult = () => {
+    setPaymentResultModal((prev) => ({ ...prev, visible: false }));
+    if (pendingPromotionRef.current) {
+      const promo = pendingPromotionRef.current;
+      pendingPromotionRef.current = null;
+      setAscensoModal({
+        visible: true,
+        categoriaAnterior: promo.categoriaAnterior,
+        nuevaCategoria: promo.nuevaCategoria,
+        mensaje: promo.mensaje,
+      });
+    }
+  };
 
   const handlePayment = async () => {
     if (!winnerDetails || !winnerDetails.idRegistroSubasta) {
@@ -318,7 +341,7 @@ export function WinnerModalProvider({ children }) {
     try {
       setIsPaying(true);
 
-      await apiFetch(`/v1/mi/compras/${winnerDetails.idRegistroSubasta}/pagar`, {
+      const res = await apiFetch(`/v1/mi/compras/${winnerDetails.idRegistroSubasta}/pagar`, {
         method: 'POST',
         body: {
           idMedioPago: Number(selectedMethodId),
@@ -327,6 +350,10 @@ export function WinnerModalProvider({ children }) {
       });
 
       setShowWinnerModal(false);
+
+      if (res?.ascenso) {
+        pendingPromotionRef.current = res.ascenso;
+      }
       setPaymentResultModal({
         visible: true,
         success: true,
@@ -581,9 +608,20 @@ export function WinnerModalProvider({ children }) {
     };
   }, [handleCompraGanada]);
 
+  const showAscensoModal = useCallback((promo) => {
+    if (!promo) return;
+    setAscensoModal({
+      visible: true,
+      categoriaAnterior: promo.categoriaAnterior,
+      nuevaCategoria: promo.nuevaCategoria,
+      mensaje: promo.mensaje,
+    });
+  }, []);
+
   const value = useMemo(() => ({
     triggerWinnerModal: handleCompraGanada,
-  }), [handleCompraGanada]);
+    showAscensoModal,
+  }), [handleCompraGanada, showAscensoModal]);
 
   const photosList = productDetails?.fotos ?? [];
   const title = productDetails
@@ -808,7 +846,7 @@ export function WinnerModalProvider({ children }) {
           animationType="fade"
           transparent={true}
           visible={paymentResultModal.visible}
-          onRequestClose={() => setPaymentResultModal((prev) => ({ ...prev, visible: false }))}
+          onRequestClose={handleClosePaymentResult}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.resultModalCard}>
@@ -837,7 +875,7 @@ export function WinnerModalProvider({ children }) {
               </Text>
 
               <Pressable
-                onPress={() => setPaymentResultModal((prev) => ({ ...prev, visible: false }))}
+                onPress={handleClosePaymentResult}
                 style={({ pressed }) => [
                   styles.resultModalButton,
                   pressed ? { opacity: 0.88, transform: [{ scale: 0.98 }] } : null,
@@ -845,6 +883,57 @@ export function WinnerModalProvider({ children }) {
               >
                 <Text style={styles.resultModalButtonText}>
                   {paymentResultModal.buttonText || 'ENTENDIDO'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Ascenso de Categoria Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={ascensoModal.visible}
+          onRequestClose={() => setAscensoModal((prev) => ({ ...prev, visible: false }))}
+        >
+          <View style={styles.modalOverlay}>
+            <ConfettiCannon />
+            <View style={styles.ascensoModalCard}>
+              <View style={styles.ascensoIconCircle}>
+                <Svg width={54} height={54} viewBox="0 0 24 24" fill="none">
+                  <Path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="#D4AF37" stroke="#D4AF37" strokeWidth={1} />
+                </Svg>
+              </View>
+
+              <Text style={styles.ascensoModalTitle}>
+                ¡ASCENSO DE CATEGORÍA!
+              </Text>
+
+              <Text style={styles.ascensoModalMessage}>
+                {ascensoModal.mensaje}
+              </Text>
+
+              <View style={styles.ascensoBadgesRow}>
+                <View style={styles.ascensoBadgeOld}>
+                  <Text style={styles.ascensoBadgeTextOld}>{(ascensoModal.categoriaAnterior || '').toUpperCase()}</Text>
+                </View>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                  <Path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="#8C777A" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+                <View style={styles.ascensoBadgeNew}>
+                  <Text style={styles.ascensoBadgeTextNew}>{(ascensoModal.nuevaCategoria || '').toUpperCase()}</Text>
+                </View>
+              </View>
+
+              <Pressable
+                onPress={() => setAscensoModal((prev) => ({ ...prev, visible: false }))}
+                style={({ pressed }) => [
+                  styles.ascensoModalButton,
+                  pressed ? { opacity: 0.88, transform: [{ scale: 0.98 }] } : null,
+                ]}
+              >
+                <Text style={styles.ascensoModalButtonText}>
+                  ¡BUENÍSIMO!
                 </Text>
               </Pressable>
             </View>
@@ -1164,6 +1253,91 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   resultModalButtonText: {
+    color: colors.white,
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    letterSpacing: 0.5,
+  },
+  ascensoModalCard: {
+    alignItems: 'center',
+    backgroundColor: '#F6E3D1',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#D4AF37',
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    width: '88%',
+    maxWidth: 380,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  ascensoIconCircle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  ascensoModalTitle: {
+    color: '#D4AF37',
+    fontFamily: fonts.bold,
+    fontSize: 22,
+    letterSpacing: 1,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  ascensoModalMessage: {
+    color: '#510310',
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  ascensoBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 26,
+  },
+  ascensoBadgeOld: {
+    backgroundColor: '#8C777A',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  ascensoBadgeTextOld: {
+    color: '#FFFFFF',
+    fontFamily: fonts.bold,
+    fontSize: 12,
+  },
+  ascensoBadgeNew: {
+    backgroundColor: '#D4AF37',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  ascensoBadgeTextNew: {
+    color: '#FFFFFF',
+    fontFamily: fonts.bold,
+    fontSize: 12,
+  },
+  ascensoModalButton: {
+    alignItems: 'center',
+    backgroundColor: '#D4AF37',
+    borderRadius: 8,
+    height: 46,
+    justifyContent: 'center',
+    width: '100%',
+  },
+  ascensoModalButtonText: {
     color: colors.white,
     fontFamily: fonts.bold,
     fontSize: 15,
