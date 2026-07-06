@@ -16,6 +16,7 @@ import {
   getAuctionDetails,
   getActiveItem,
   startAuctionNow,
+  getAuctionBids,
 } from '../../services/auctionsApi';
 import SubastadoStamp from '../../components/status/SubastadoStamp';
 import { useWinnerModal } from '../../components/feedback/WinnerModalProvider';
@@ -206,7 +207,7 @@ function TimeExtensionBadge({ animation, variant = 'card' }) {
   });
   const translateY = animation.interpolate({
     inputRange: [0, 1, 2],
-    outputRange: [8, -6, 5],
+    outputRange: [5, 0, 5],
     extrapolate: 'clamp',
   });
 
@@ -221,7 +222,7 @@ function TimeExtensionBadge({ animation, variant = 'card' }) {
         },
       ]}
     >
-      +0
+      +5
     </Animated.Text>
   );
 }
@@ -833,41 +834,68 @@ export default function AuctionDetailScreen({
     let active = true;
 
     getActiveItem(resolvedAuctionId, { isSubastador })
-      .then(async (data) => {
+      .then((data) => {
         if (active) {
           setActiveItem(data);
-          const activeItemId = data?.idItem ?? data?.id_item;
-          if (activeItemId) {
-            try {
-              const bidsRes = await getAuctionBids(
-                resolvedAuctionId,
-                activeItemId,
-                1,
-                20,
-                { isSubastador }
-              );
-              const bidsList = Array.isArray(bidsRes) ? bidsRes : (bidsRes?.datos ?? []);
-              const totalCount = bidsRes?.meta?.total ?? bidsList.length;
-              
-              const recentBidders = [...bidsList].reverse().map((b) => ({
-                id: b.identificador,
-                name: b.nombreUsuario ?? b.nombre_usuario ?? 'Comprador',
-                photo: b.fotoPerfil ?? b.urlFotoPerfil ?? b.foto_perfil ?? b.url_foto_perfil ?? null,
-              })).slice(0, 4);
-
-              setRecentBiddersMap((prevMap) => ({
-                ...prevMap,
-                [activeItemId]: { totalCount, recentBidders },
-              }));
-            } catch (err) {
-              console.log('Error loading initial bids for active item:', err);
-            }
-          }
         }
       })
       .catch((err) => {
         console.log('Error fetching active item:', err);
       });
+  }, [isSubastador, resolvedAuctionId, auctionDetails?.estado]);
+
+  useEffect(() => {
+    const activeItemId = activeItem?.idItem ?? activeItem?.id_item;
+    if (!resolvedAuctionId || !activeItemId) {
+      return undefined;
+    }
+
+    let active = true;
+
+    getAuctionBids(
+      resolvedAuctionId,
+      activeItemId,
+      1,
+      20,
+      { isSubastador }
+    )
+      .then((bidsRes) => {
+        if (active) {
+          const bidsList = Array.isArray(bidsRes) ? bidsRes : (bidsRes?.datos ?? []);
+          const totalCount = bidsRes?.meta?.total ?? bidsList.length;
+
+          const recentBidders = [...bidsList].reverse().map((b) => ({
+            id: b.identificador ?? b.idPuja ?? Date.now(),
+            name: b.nombreUsuario ?? b.nombre_usuario ?? 'Comprador',
+            photo: b.fotoPerfil ?? b.urlFotoPerfil ?? b.foto_perfil ?? b.url_foto_perfil ?? null,
+          })).slice(0, 4);
+
+          setRecentBiddersMap((prevMap) => ({
+            ...prevMap,
+            [activeItemId]: { totalCount, recentBidders },
+          }));
+        }
+      })
+      .catch((err) => {
+        console.log('Error loading bids for active item:', err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [resolvedAuctionId, activeItem?.idItem, activeItem?.id_item, isSubastador]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (resolvedAuctionId === undefined || resolvedAuctionId === null) {
+      return undefined;
+    }
+
+    if (auctionDetails?.estado !== 'abierta') {
+      setWsStatus('disconnected');
+      return undefined;
+    }
 
     const wsBase = API_BASE_URL.replace(/^http/, 'ws');
     const token = getAccessToken();
@@ -912,29 +940,46 @@ export default function AuctionDetailScreen({
               };
             });
 
-            setActiveItem((current) => {
-              const currentIdItem = current?.idItem ?? current?.id_item;
-              if (current && Number(currentIdItem) === Number(datosIdItem)) {
-                const nextEndTime =
-                  datos.finalizaEn ??
-                  datos.finaliza_en ??
-                  current.finalizaEn ??
-                  current.finaliza_en;
-                return {
-                  ...current,
-                  mejorOferta: datos.importe,
-                  mejor_oferta: datos.importe,
-                  pujaMinima: datos.pujaMinima ?? datos.puja_minima,
-                  puja_minima: datos.pujaMinima ?? datos.puja_minima,
-                  pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
-                  puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
-                  finalizaEn: nextEndTime,
-                  finaliza_en: nextEndTime,
-                };
-              }
-              return current;
-            });
-          }
+             if (isBidForActiveItem) {
+               triggerTimeExtensionAnimation();
+             }
+
+             setLots((currentLots) =>
+               currentLots.map((lot) => {
+                 if (Number(lot.identificador) === Number(datosIdItem)) {
+                   return {
+                     ...lot,
+                     mejorOferta: datos.importe,
+                     mejor_oferta: datos.importe,
+                   };
+                 }
+                 return lot;
+               })
+             );
+
+             setActiveItem((current) => {
+               const currentIdItem = current?.idItem ?? current?.id_item;
+               if (current && Number(currentIdItem) === Number(datosIdItem)) {
+                 const nextEndTime =
+                   datos.finalizaEn ??
+                   datos.finaliza_en ??
+                   current.finalizaEn ??
+                   current.finaliza_en;
+                 return {
+                   ...current,
+                   mejorOferta: datos.importe,
+                   mejor_oferta: datos.importe,
+                   pujaMinima: datos.pujaMinima ?? datos.puja_minima,
+                   puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                   pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
+                   puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
+                   finalizaEn: nextEndTime,
+                   finaliza_en: nextEndTime,
+                 };
+               }
+               return current;
+             });
+           }
         } else if (message.evento === 'pujaGanadora') {
           const datos = message.datos;
           const winnerItemId = datos?.idItem ?? datos?.id_item;
@@ -1340,7 +1385,7 @@ const styles = StyleSheet.create({
     minHeight: 28,
   },
   timeExtensionBadge: {
-    color: colors.burgundy,
+    color: colors.statusGreenBorder,
     fontFamily: fonts.bold,
     fontSize: 12,
     lineHeight: 16,

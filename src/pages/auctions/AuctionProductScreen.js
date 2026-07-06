@@ -508,6 +508,7 @@ export default function AuctionProductScreen({
   const cameraBidFadeAnim = useRef(new Animated.Value(0)).current;
   const cameraBidSlideAnim = useRef(new Animated.Value(15)).current;
   const newBidPushAnim = useRef(new Animated.Value(1)).current;
+  const timeExtensionAnim = useRef(new Animated.Value(0)).current;
   const [latestCameraBid, setLatestCameraBid] = useState(null);
   const expirationCheckRef = useRef(false);
   const localWinnerModalShownRef = useRef(false);
@@ -541,6 +542,28 @@ export default function AuctionProductScreen({
       onAuctionFinished({ target: 'auctions' });
     }
   }, [onAuctionFinished]);
+
+  const triggerTimeExtensionAnimation = useCallback(() => {
+    timeExtensionAnim.stopAnimation();
+    timeExtensionAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(timeExtensionAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.delay(420),
+      Animated.timing(timeExtensionAnim, {
+        toValue: 2,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) {
+        timeExtensionAnim.setValue(0);
+      }
+    });
+  }, [timeExtensionAnim]);
 
   // Format price helper
   const formatPrice = (amount, curr) => {
@@ -731,6 +754,7 @@ export default function AuctionProductScreen({
               const newPrice = cleanNumericPrice(datos.importe);
               const diff = newPrice > previousPrice ? (newPrice - previousPrice) : cleanNumericPrice(datos.incremento ?? datos.pujaMinima ?? 0);
               
+              triggerTimeExtensionAnimation();
               setCurrentPriceStr(String(newPrice));
               setMinBidVal(Number(datos.pujaMinima ?? datos.puja_minima));
               setActiveItem((current) => {
@@ -750,6 +774,8 @@ export default function AuctionProductScreen({
                   mejor_oferta: datos.importe,
                   pujaMinima: datos.pujaMinima ?? datos.puja_minima,
                   puja_minima: datos.pujaMinima ?? datos.puja_minima,
+                  pujaMaxima: datos.pujaMaxima ?? datos.puja_maxima,
+                  puja_maxima: datos.pujaMaxima ?? datos.puja_maxima,
                   finalizaEn: nextEndTime,
                   finaliza_en: nextEndTime,
                 };
@@ -835,6 +861,7 @@ export default function AuctionProductScreen({
     productDetails,
     subastaDetails,
     subastaId,
+    triggerTimeExtensionAnimation,
     triggerSwapBack,
     triggerWinnerModal,
   ]);
@@ -905,6 +932,16 @@ export default function AuctionProductScreen({
     isBeingSubastado && activeItemEndMs
       ? Math.max(0, Math.floor((activeItemEndMs - now) / 1000))
       : null;
+  const timeExtensionOpacity = timeExtensionAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [0, 1, 0],
+    extrapolate: 'clamp',
+  });
+  const timeExtensionTranslateY = timeExtensionAnim.interpolate({
+    inputRange: [0, 1, 2],
+    outputRange: [5, 0, 5],
+    extrapolate: 'clamp',
+  });
 
   const productData = { ...(product || {}), ...(productDetails || {}) };
   const productStateRaw = String(productData.estado || productData.condicion || 'usado').toLowerCase();
@@ -1217,19 +1254,13 @@ export default function AuctionProductScreen({
       return null;
     }
 
-    const currentVal = cleanNumericPrice(currentPriceStr) || Number(product.precioBase);
     const baseVal = cleanNumericPrice(product.precioBase || productDetails?.precioBase || 0);
-    const maxTotal = getBidMaximumTotal(currentVal, baseVal);
-    const maxIncrement = maxTotal ? Math.max(0, maxTotal - currentVal) : null;
-    const inc1 = Math.max(1, Math.round(baseVal * 0.01));
-    const inc2 = Math.max(inc1 + 1, Math.round(baseVal * 0.05));
-    const inc3 = Math.max(inc2 + 1, Math.round(baseVal * 0.10));
-    const inc4 = Math.max(inc3 + 1, Math.round(baseVal * 0.20));
+    const inc1 = Math.max(0.01, Number((baseVal * 0.01).toFixed(2)));
+    const inc2 = Math.max(inc1 + 0.01, Number((baseVal * 0.05).toFixed(2)));
+    const inc3 = Math.max(inc2 + 0.01, Number((baseVal * 0.10).toFixed(2)));
+    const inc4 = Math.max(inc3 + 0.01, Number((baseVal * 0.20).toFixed(2)));
 
-    const options = [inc1, inc2, inc3, inc4]
-      .map((inc) => (maxIncrement ? Math.min(inc, maxIncrement) : inc))
-      .filter((inc) => inc > 0)
-      .filter((inc, index, list) => list.indexOf(inc) === index);
+    const options = [inc1, inc2, inc3, inc4];
     const isDisabled = !isBeingSubastado || !bidPermission.canBid;
 
     return (
@@ -1751,6 +1782,17 @@ export default function AuctionProductScreen({
                   : 'Calculando...'}
               </Text>
             </View>
+            <Animated.Text
+              style={[
+                styles.activeTimeExtensionBadge,
+                {
+                  opacity: timeExtensionOpacity,
+                  transform: [{ translateY: timeExtensionTranslateY }],
+                },
+              ]}
+            >
+              +5
+            </Animated.Text>
           </View>
         ) : null}
 
@@ -2043,7 +2085,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   activeTimeRow: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    flexDirection: 'row',
     marginTop: 8,
     paddingHorizontal: 18,
     width: '100%',
@@ -2074,6 +2117,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     letterSpacing: 0,
     lineHeight: 20,
+  },
+  activeTimeExtensionBadge: {
+    color: colors.statusGreenBorder,
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    lineHeight: 17,
+    marginLeft: 7,
+    minWidth: 20,
   },
   priceBelowTitleRow: {
     flexDirection: 'row',
