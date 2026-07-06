@@ -31,7 +31,7 @@ import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
 
 const CATEGORIES = [
-  { label: 'Comun', value: 'comun' },
+  { label: 'Común', value: 'comun' },
   { label: 'Especial', value: 'especial' },
   { label: 'Plata', value: 'plata' },
   { label: 'Oro', value: 'oro' },
@@ -111,7 +111,6 @@ function ClientRow({ client, onDone }) {
           {client.nombre} {client.apellido}
         </Text>
         <Text style={styles.rowMeta}>{client.email}</Text>
-        <Text style={styles.rowMeta}>Doc. {client.documento || '-'}</Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
       <View style={styles.rowActions}>
@@ -185,12 +184,12 @@ function requiredError(value, label) {
 
 function validatePassword(password) {
   if (!password) {
-    return 'Ingresa una contrasenia.';
+    return 'Ingresa una contraseña.';
   }
 
   return passwordRules.every((rule) => rule.test(password))
     ? ''
-    : 'La contrasenia todavia no cumple los requisitos.';
+    : 'La contraseña todavia no cumple los requisitos.';
 }
 
 function profileInitials(profile) {
@@ -531,8 +530,8 @@ function PasswordEditModal({ onClose, visible }) {
     confirmation:
       confirmation && newPassword === confirmation
         ? ''
-        : 'Las contrasenias no coinciden.',
-    currentPassword: requiredError(currentPassword, 'tu contrasenia actual'),
+        : 'Las contraseñas no coinciden.',
+    currentPassword: requiredError(currentPassword, 'tu contraseña actual'),
     newPassword: validatePassword(newPassword),
   };
   const isValid = Object.values(errors).every((error) => !error);
@@ -551,7 +550,7 @@ function PasswordEditModal({ onClose, visible }) {
       onClose();
     } catch (error) {
       setApiError(
-        getApiErrorMessage(error, 'No pudimos cambiar la contrasenia.')
+        getApiErrorMessage(error, 'No pudimos cambiar la contraseña.')
       );
     } finally {
       setLoading(false);
@@ -559,17 +558,17 @@ function PasswordEditModal({ onClose, visible }) {
   }
 
   return (
-    <ProfileModal onClose={onClose} title="Cambiar contrasenia" visible={visible}>
+    <ProfileModal onClose={onClose} title="Cambiar contraseña" visible={visible}>
       <AuthTextField
         error={submitted ? errors.currentPassword : ''}
-        label="Contrasenia actual"
+        label="Contraseña actual"
         onChangeText={setCurrentPassword}
         secureTextEntry
         value={currentPassword}
       />
       <AuthTextField
         error={submitted && !newPassword ? errors.newPassword : ''}
-        label="Nueva contrasenia"
+        label="Nueva contraseña"
         onChangeText={setNewPassword}
         secureTextEntry
         style={styles.passwordField}
@@ -578,7 +577,7 @@ function PasswordEditModal({ onClose, visible }) {
       <PasswordChecklist value={newPassword} />
       <AuthTextField
         error={submitted ? errors.confirmation : ''}
-        label="Confirmar nueva contrasenia"
+        label="Confirmar nueva contraseña"
         onChangeText={setConfirmation}
         secureTextEntry
         value={confirmation}
@@ -659,7 +658,7 @@ function ProfileTab({ onLogout }) {
         onPress={() => setModal('password')}
         style={styles.actionRow}
       >
-        <Text style={styles.actionRowText}>Cambiar contrasenia</Text>
+        <Text style={styles.actionRowText}>Cambiar contraseña</Text>
         <Text style={styles.actionArrow}>›</Text>
       </Pressable>
 
@@ -773,10 +772,11 @@ const styles = StyleSheet.create({
   },
   rowActions: {
     alignItems: 'flex-end',
+    flexShrink: 0,
     rowGap: 8,
   },
   selectWrap: {
-    minWidth: 112,
+    width: 112,
     zIndex: 4,
   },
   selectButton: {
@@ -802,9 +802,8 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     marginTop: 4,
+    minWidth: 112,
     overflow: 'hidden',
-    position: 'absolute',
-    top: 34,
     width: '100%',
     zIndex: 8,
   },

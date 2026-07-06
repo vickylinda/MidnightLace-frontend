@@ -302,7 +302,7 @@ export default function SignUpScreen({ onSubmitSuccess }) {
           <Text style={styles.pendingTitle}>Estamos revisando tus datos</Text>
           <Text style={styles.pendingText}>
             Si tu cuenta es aceptada, vas a recibir un mail con el codigo para
-            setear tu contrasenia. Si es rechazada, tambien te vamos a avisar
+            setear tu contraseña. Si es rechazada, tambien te vamos a avisar
             por mail.
           </Text>
           <Text style={styles.pendingText}>

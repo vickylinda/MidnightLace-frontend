@@ -23,12 +23,68 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
+import { quoteHomeShipping } from '../../services/shippingApi';
 import { apiFetch } from '../../utils/http';
 import { getAccessToken } from '../../utils/session';
 import { API_BASE_URL, resolveApiAssetUrl } from '../../utils/config';
+import { formatMoney } from '../../utils/money';
+import { useNotifications } from '../../context/NotificationsContext';
 
 function normalizeCurrency(value) {
   return String(value || '').trim().toUpperCase();
+}
+
+function isUsdCurrency(currency) {
+  return normalizeCurrency(currency) === 'USD';
+}
+
+function formatShippingTotal(productAmount, shippingAmount, currency) {
+  const product = Number(productAmount) || 0;
+  const shipping = Number(shippingAmount) || 0;
+  if (isUsdCurrency(currency)) {
+    return `${formatMoney(product, 'USD', { emptyValue: '' })} + ${formatMoney(shipping, 'ARS', { emptyValue: '' })}`;
+  }
+  return formatMoney(product + shipping, currency || 'ARS', { emptyValue: '' });
+}
+
+function getDepositAddress(product) {
+  const deposit =
+    product?.deposito ||
+    product?.depositoAsignado ||
+    product?.direccionRetiro ||
+    product?.direccionDeposito ||
+    null;
+
+  if (deposit && typeof deposit === 'object') {
+    return {
+      country: deposit.pais || deposit.country || 'Argentina',
+      latitude: deposit.latitud || deposit.latitude || null,
+      locality: deposit.localidad || deposit.locality || deposit.ciudad || '',
+      longitude: deposit.longitud || deposit.longitude || null,
+      number: deposit.numero || deposit.number || '',
+      postalCode: deposit.codigoPostal || deposit.codigo_postal || deposit.postalCode || deposit.cp || '',
+      province: deposit.provincia || deposit.province || '',
+      street: deposit.calle || deposit.street || deposit.direccion || '',
+    };
+  }
+
+  return product?.direccionRetiroTexto || product?.direccionDepositoTexto || product?.ubicacion || null;
+}
+
+function normalizeEventData(data) {
+  if (!data) {
+    return {};
+  }
+
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return {};
+    }
+  }
+
+  return data;
 }
 
 function isCheckPaymentMethod(payment) {
@@ -80,6 +136,25 @@ function isCurrencyMismatchError(error) {
     message.includes('cuenta') ||
     message.includes('payment')
   );
+}
+
+function dispatchAuctionSwapBack() {
+  if (typeof window === 'undefined' || !window.dispatchEvent) {
+    return;
+  }
+
+  const EventConstructor =
+    typeof window.CustomEvent === 'function'
+      ? window.CustomEvent
+      : typeof CustomEvent === 'function'
+      ? CustomEvent
+      : typeof window.Event === 'function'
+      ? window.Event
+      : null;
+
+  if (EventConstructor) {
+    window.dispatchEvent(new EventConstructor('auction_swap_back'));
+  }
 }
 
 function ConfettiPiece({ delay, color, initialX, initialRotate, size, shape, containerWidth }) {
@@ -182,12 +257,16 @@ const WinnerModalContext = createContext({
 });
 
 export function WinnerModalProvider({ children }) {
+  const notificationsContext = useNotifications();
   const [showWinnerModal, setShowWinnerModal] = useState(false);
   const [winnerDetails, setWinnerDetails] = useState(null);
   const [productDetails, setProductDetails] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [selectedMethodId, setSelectedMethodId] = useState(null);
   const [isPaying, setIsPaying] = useState(false);
+  const [pickupSelected, setPickupSelected] = useState(false);
+  const handledWinnerIdsRef = useRef(new Set());
+  const processingWinnerIdsRef = useRef(new Set());
   const [paymentResultModal, setPaymentResultModal] = useState({
     visible: false,
     success: false,
@@ -243,6 +322,7 @@ export function WinnerModalProvider({ children }) {
         method: 'POST',
         body: {
           idMedioPago: Number(selectedMethodId),
+          retiraPersonalmente: pickupSelected,
         },
       });
 
@@ -250,8 +330,8 @@ export function WinnerModalProvider({ children }) {
       setPaymentResultModal({
         visible: true,
         success: true,
-        title: '¡Pago Exitoso!',
-        message: 'El pago se efectuó exitosamente. Tu compra ha sido procesada con éxito.',
+        title: 'Pago exitoso',
+        message: pickupSelected ? 'El pago se efectuo exitosamente. Podras retirar tu pedido personalmente.' : 'El pago se efectuo exitosamente. Tu pedido se enviara a domicilio.',
       });
     } catch (err) {
       console.log('[WinnerModalProvider] Payment error:', err);
@@ -285,20 +365,38 @@ export function WinnerModalProvider({ children }) {
 
   // Format price helper
   const formatPrice = (amount, curr) => {
-    if (amount === undefined || amount === null || isNaN(amount)) return '';
-    const formatted = Number(amount).toLocaleString('es-AR', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-    return `$ ${formatted}`;
+    return formatMoney(amount, curr, { emptyValue: '' });
   };
 
-  const handleCompraGanada = useCallback(async (datos) => {
+  const handleCompraGanada = useCallback(async (rawDatos) => {
     try {
+      const datos = normalizeEventData(rawDatos);
+      const winnerEventId = datos.idRegistroSubasta || datos.notificationId
+        ? String(datos.idRegistroSubasta || datos.notificationId)
+        : '';
+
+      if (
+        winnerEventId &&
+        (
+          handledWinnerIdsRef.current.has(winnerEventId) ||
+          processingWinnerIdsRef.current.has(winnerEventId)
+        )
+      ) {
+        return;
+      }
+
+      if (winnerEventId) {
+        processingWinnerIdsRef.current.add(winnerEventId);
+      }
+
       const finalPrice = parseFloat(datos.importe);
-      const commission = parseFloat(datos.comision) || 20000;
       const shipping = parseFloat(datos.costoEnvio) || 0;
       const currency = datos.moneda || 'USD';
+      setPickupSelected(false);
+
+      if (datos.productoDetalle) {
+        setProductDetails(datos.productoDetalle);
+      }
 
       // 1. Fetch active payment methods
       let validMethods = [];
@@ -349,12 +447,25 @@ export function WinnerModalProvider({ children }) {
         }
       }
 
+      let quotedShipping = shipping;
+      try {
+        const profile = await apiFetch('/v1/mi/perfil');
+        const quote = await quoteHomeShipping({
+          destinationAddress: profile,
+          originAddress: getDepositAddress(prodDetails || datos.productoDetalle || {}),
+        });
+        if (quote != null) {
+          quotedShipping = quote;
+        }
+      } catch (err) {
+        console.log('[WinnerModalProvider] Error quoting shipping:', err);
+      }
+
       setWinnerDetails({
         finalPrice,
         marketValue: finalPrice * 1.25,
         savedAmount: finalPrice * 0.25,
-        commission,
-        shipping,
+        shipping: quotedShipping,
         total: finalPrice,
         currency,
         idRegistroSubasta: datos.idRegistroSubasta,
@@ -365,15 +476,47 @@ export function WinnerModalProvider({ children }) {
         window.location.pathname.includes('/subasta/producto');
 
       if (isProductScreen) {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('auction_swap_back'));
-        }
+        dispatchAuctionSwapBack();
       }
       setShowWinnerModal(true);
+      if (winnerEventId) {
+        handledWinnerIdsRef.current.add(winnerEventId);
+      }
     } catch (err) {
       console.log('[WinnerModalProvider] Error handling compra_ganada:', err);
+    } finally {
+      const datos = normalizeEventData(rawDatos);
+      const winnerEventId = datos.idRegistroSubasta || datos.notificationId
+        ? String(datos.idRegistroSubasta || datos.notificationId)
+        : '';
+      if (winnerEventId) {
+        processingWinnerIdsRef.current.delete(winnerEventId);
+      }
     }
   }, []);
+
+  useEffect(() => {
+    const event = notificationsContext?.lastEvent;
+    if (event?.evento !== 'compra_ganada') {
+      return;
+    }
+
+    handleCompraGanada({ ...normalizeEventData(event.datos), notificationId: event.notificationId });
+  }, [notificationsContext?.lastEvent, handleCompraGanada]);
+
+  useEffect(() => {
+    const winnerNotification = (notificationsContext?.notifications || []).find(
+      (notification) => notification?.tipo === 'compra_ganada'
+    );
+    if (!winnerNotification) {
+      return;
+    }
+
+    handleCompraGanada({
+      ...normalizeEventData(winnerNotification.detalle),
+      notificationId: winnerNotification.identificador,
+    });
+  }, [notificationsContext?.notifications, handleCompraGanada]);
 
   // Poll-based check for user WebSocket connection to /v1/ws/usuario
   useEffect(() => {
@@ -604,25 +747,22 @@ export function WinnerModalProvider({ children }) {
                         </Text>
                       </View>
                       <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownLabel}>Envío:</Text>
+                        <Text style={styles.breakdownLabel}>Envio a domicilio:</Text>
                         <Text style={styles.breakdownValue}>
-                          {formatPrice(winnerDetails.shipping, winnerDetails.currency)} (recogida en tienda)
-                        </Text>
-                      </View>
-                      <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownLabel}>Comisión de servicio:</Text>
-                        <Text style={styles.breakdownValue}>
-                          {formatPrice(winnerDetails.commission, winnerDetails.currency)}
+                          {formatPrice(pickupSelected ? 0 : winnerDetails.shipping, 'ARS')}
                         </Text>
                       </View>
                       <View style={[styles.breakdownRow, { marginTop: 4 }]}>
                         <Text style={styles.breakdownTotalLabel}>Total a pagar:</Text>
                         <Text style={styles.breakdownTotalValue}>
-                          {formatPrice(winnerDetails.total, winnerDetails.currency)}
+                          {formatShippingTotal(
+                            winnerDetails.finalPrice,
+                            pickupSelected ? 0 : winnerDetails.shipping,
+                            winnerDetails.currency
+                          )}
                         </Text>
                       </View>
                     </View>
-
                     {/* Pay Button */}
                     <Pressable
                       disabled={isPaying}
@@ -637,9 +777,20 @@ export function WinnerModalProvider({ children }) {
                         <ActivityIndicator color={colors.white} size="small" />
                       ) : (
                         <Text style={styles.modalPayButtonText}>
-                          {`PAGAR AHORA ${formatPrice(winnerDetails.total, winnerDetails.currency)}`}
+                          {`PAGAR AHORA ${formatShippingTotal(
+                            winnerDetails.finalPrice,
+                            pickupSelected ? 0 : winnerDetails.shipping,
+                            winnerDetails.currency
+                          )}`}
                         </Text>
                       )}
+                    </Pressable>
+                    <Pressable
+                      disabled={isPaying}
+                      onPress={() => setPickupSelected(true)}
+                      style={styles.modalPickupButton}
+                    >
+                      <Text style={styles.modalPickupButtonText}>Retirar personalmente</Text>
                     </Pressable>
 
                     <Text style={styles.modalDisclaimer}>
@@ -941,6 +1092,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bold,
     fontSize: 14,
   },
+  modalPickupButton: {
+    alignItems: 'center',
+    borderColor: colors.burgundy,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingVertical: 10,
+  },
+  modalPickupButtonText: {
+    color: colors.burgundy,
+    fontFamily: fonts.bold,
+    fontSize: 13,
+  },
   modalDisclaimer: {
     color: '#8C777A',
     fontFamily: fonts.regular,
@@ -1005,3 +1170,5 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 });
+
+

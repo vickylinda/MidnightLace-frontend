@@ -2,36 +2,10 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AuctionCard from '../../components/auctions/AuctionCard';
+import { getResponseItems, mapAuctionToCard } from '../../utils/auctions';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
-import { resolveApiAssetUrl } from '../../utils/config';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
-function capitalize(str) {
-  if (!str) return '';
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function mapEstado(estado) {
-  if (estado === 'programada') return 'inscripción abierta';
-  if (estado === 'abierta') return 'en curso';
-  return 'finalizada';
-}
-
-function mapSubastaToCard(s) {
-  const hora = s.hora ? ` · ${String(s.hora).slice(0, 5)}h` : '';
-  const fecha = s.fecha ? s.fecha.split('-').reverse().join('/') : '-';
-  return {
-    category: capitalize(s.categoria),
-    dateTime: `${fecha}${hora}`,
-    imageSource: s.fotoPrincipal ? { uri: resolveApiAssetUrl(s.fotoPrincipal) } : null,
-    location: s.ubicacion || 'Ubicación por confirmar',
-    pieces: null,
-    status: mapEstado(s.estado),
-    title: s.nombre,
-    id: s.identificador,
-    rawData: s,
-  };
-}
 
 export default function AllAuctionsScreen({ isSubastador, onAuctionPress }) {
   const [subastas, setSubastas] = useState([]);
@@ -46,8 +20,7 @@ export default function AllAuctionsScreen({ isSubastador, onAuctionPress }) {
         ? '/v1/subastador/subastas?pagina=1&cantidad=50'
         : '/v1/subastas?pagina=1&cantidad=50';
       const res = await apiFetch(endpoint);
-      const datos = res.datos || res || [];
-      setSubastas(datos.map(mapSubastaToCard));
+      setSubastas(getResponseItems(res).map(mapAuctionToCard));
     } catch (err) {
       setError(getApiErrorMessage(err, 'No se pudieron cargar las subastas.'));
     } finally {
@@ -78,7 +51,7 @@ export default function AllAuctionsScreen({ isSubastador, onAuctionPress }) {
         <View style={styles.centerState}>
           <Text style={styles.stateText}>
             {isSubastador
-              ? 'Todavía no creaste ninguna subasta.'
+              ? 'Todavia no creaste ninguna subasta.'
               : 'No hay subastas disponibles.'}
           </Text>
         </View>

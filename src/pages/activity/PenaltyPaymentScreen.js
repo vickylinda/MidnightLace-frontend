@@ -7,6 +7,7 @@ import { listPaymentMethods } from '../../services/paymentMethodsApi';
 import { apiFetch, getApiErrorMessage } from '../../utils/http';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
+import { formatMoney } from '../../utils/money';
 function WarningIcon() {
   return (
     <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
@@ -125,7 +126,7 @@ function buildMethodDetail(m) {
     return m.detalle?.nombreBanco || '';
   }
   if (m.tipo === 'chequeCertificado' && m.detalle?.montoDisponible != null) {
-    return `Disponible: $${Number(m.detalle.montoDisponible).toLocaleString('es-AR')}`;
+    return `Disponible: ${formatMoney(m.detalle.montoDisponible, m.moneda)}`;
   }
   return '';
 }

@@ -16,6 +16,10 @@ export function getSession() {
   return _session;
 }
 
+export function getUserId() {
+  return _session?.idUsuario ?? _session?.id_usuario ?? _session?.id ?? _session?.usuario?.id ?? null;
+}
+
 export function setSession(session) {
   _session = session;
   AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session)).catch(() => {});

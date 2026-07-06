@@ -15,6 +15,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useNotifications } from '../../context/NotificationsContext';
 import { colors } from '../../theme/colors';
 import { fonts } from '../../theme/fonts';
+import { formatMoney } from '../../utils/money';
 
 const TOP_BAR_HEIGHT = 86;
 const LOGO_RATIO = 965 / 258;
@@ -45,9 +46,9 @@ const TYPE_TEXTS = {
   compra_ganada: (d) =>
     `Ganaste un producto en la subasta. Tenés más información en Mi actividad > Compras realizadas.`,
   compra_pagada: (d) =>
-    `Tu compra fue confirmada.${d?.importe ? ` Importe: $${d.importe}.` : ''}`,
+    `Tu compra fue confirmada.${d?.importe ? ` Importe: ${formatMoney(d.importe, d.moneda)}.` : ''}`,
   multa_generada: (d) =>
-    `Tenés una multa pendiente${d?.importe ? ` de $${d.importe}` : ''}. Debe abonarse para participar en nuevas subastas.`,
+    `Tenés una multa pendiente${d?.importe ? ` de ${formatMoney(d.importe, d.moneda)}` : ''}. Debe abonarse para participar en nuevas subastas.`,
   multa_pagada: () => 'Tu multa fue pagada exitosamente.',
   producto_aceptado: () =>
     'Tu producto fue aceptado. Revisá las condiciones en tu catálogo y confirmá tu participación.',
